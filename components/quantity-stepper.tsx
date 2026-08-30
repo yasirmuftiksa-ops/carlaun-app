@@ -7,12 +7,14 @@ export function QuantityStepper({
   qty,
   onAdd,
   onRemove,
+  onSet,
   size = 'md',
   label,
 }: {
   qty: number
   onAdd: () => void
   onRemove: () => void
+  onSet?: (n: number) => void
   size?: 'sm' | 'md'
   label?: string
 }) {
