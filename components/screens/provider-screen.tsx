@@ -1,13 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import {
-  CheckCircle2,
-  Clock,
-  PackageCheck,
-  Star,
-  Truck,
-} from 'lucide-react'
+import { CircleCheck as CheckCircle2, Clock, PackageCheck, Star, Truck } from 'lucide-react'
 import { PARTNERS } from '@/lib/data'
 import { rupees } from '@/lib/format'
 import { useStore } from '@/lib/store'
