@@ -35,6 +35,14 @@ export interface Partner {
   services: string
   distance: string
   turnaround: string
+
+  // CARLAUN cooperative provider details
+  verified: boolean
+  available: boolean
+  experience: number
+  serviceArea: string
+  completedJobs: number
+  earnings: number
 }
 
 export interface Offer {

@@ -113,6 +113,12 @@ export const PARTNERS: Partner[] = [
     services: 'Laundry • Ironing',
     distance: '1.2 km away',
     turnaround: '24-hour turnaround',
+    verified: true,
+    available: true,
+    experience: 4,
+    serviceArea: 'Within 5 km',
+    completedJobs: 248,
+    earnings: 18450,
   },
   {
     id: 'cleannest',
@@ -121,6 +127,12 @@ export const PARTNERS: Partner[] = [
     services: 'Dry Cleaning • Shoe Care',
     distance: '2.1 km away',
     turnaround: '48-hour turnaround',
+    verified: true,
+    available: true,
+    experience: 3,
+    serviceArea: 'Within 7 km',
+    completedJobs: 186,
+    earnings: 14200,
   },
   {
     id: 'presspro',
@@ -129,6 +141,12 @@ export const PARTNERS: Partner[] = [
     services: 'Ironing • Laundry',
     distance: '0.8 km away',
     turnaround: 'Same-day available',
+    verified: true,
+    available: false,
+    experience: 6,
+    serviceArea: 'Within 4 km',
+    completedJobs: 327,
+    earnings: 23150,
   },
 ]
 
