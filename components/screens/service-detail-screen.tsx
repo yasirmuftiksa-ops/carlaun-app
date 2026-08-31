@@ -10,7 +10,11 @@ import { BagBar } from '@/components/bag-bar'
 import { QuantityStepper } from '@/components/quantity-stepper'
 import { ScreenHeader } from '@/components/screen-header'
 
-export function ServiceDetailScreen({ serviceId }: { serviceId: string }) {
+export function ServiceDetailScreen({
+  serviceId,
+}: {
+  serviceId: string
+}) {
   const {
     getQty,
     addItem,
@@ -19,6 +23,8 @@ export function ServiceDetailScreen({ serviceId }: { serviceId: string }) {
     care,
     setCare,
     toast,
+    selectedProvider,
+    setSelectedProvider,
   } = useStore()
 
   const service = getService(serviceId)
@@ -112,7 +118,9 @@ export function ServiceDetailScreen({ serviceId }: { serviceId: string }) {
         <div className="flex items-start gap-4">
           <div
             className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-card"
-            style={{ backgroundColor: service.accent }}
+            style={{
+              backgroundColor: service.accent,
+            }}
           >
             <Icon
               name={service.icon}
@@ -215,7 +223,10 @@ export function ServiceDetailScreen({ serviceId }: { serviceId: string }) {
 
         <div className="space-y-2.5">
           {service.items.map((item, i) => {
-            const qty = getQty(service.id, item.id)
+            const qty = getQty(
+              service.id,
+              item.id,
+            )
 
             const price = Math.round(
               item.price *
@@ -227,9 +238,17 @@ export function ServiceDetailScreen({ serviceId }: { serviceId: string }) {
             return (
               <motion.div
                 key={item.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.04 }}
+                initial={{
+                  opacity: 0,
+                  y: 12,
+                }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                }}
+                transition={{
+                  delay: i * 0.04,
+                }}
                 className={`flex items-center justify-between rounded-2xl border bg-card px-4 py-3.5 transition-colors ${
                   qty > 0
                     ? 'border-primary/40'
@@ -323,8 +342,16 @@ export function ServiceDetailScreen({ serviceId }: { serviceId: string }) {
           ) : (
             <div className="space-y-2.5">
               {recommendedProviders.map(
-                ({ partner, matchScore }, index) => {
-                  const isBestMatch = index === 0
+                ({
+                  partner,
+                  matchScore,
+                }, index) => {
+                  const isBestMatch =
+                    index === 0
+
+                  const isSelected =
+                    selectedProvider?.id ===
+                    partner.id
 
                   return (
                     <motion.div
@@ -341,9 +368,11 @@ export function ServiceDetailScreen({ serviceId }: { serviceId: string }) {
                         delay: index * 0.05,
                       }}
                       className={`relative overflow-hidden rounded-2xl border bg-card p-4 ${
-                        isBestMatch
-                          ? 'border-primary/50'
-                          : 'border-border'
+                        isSelected
+                          ? 'border-primary ring-2 ring-primary/20'
+                          : isBestMatch
+                            ? 'border-primary/50'
+                            : 'border-border'
                       }`}
                     >
                       {/* Best Match badge */}
@@ -451,18 +480,28 @@ export function ServiceDetailScreen({ serviceId }: { serviceId: string }) {
                       <button
                         disabled={!partner.available}
                         onClick={() => {
+                          setSelectedProvider(
+                            partner,
+                          )
+
                           toast(
                             `${partner.name} selected for ${service.name}`,
                             'info',
                           )
                         }}
-                        className="mt-3 w-full rounded-full bg-foreground py-2.5 text-xs font-semibold text-card transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                        className={`mt-3 w-full rounded-full py-2.5 text-xs font-semibold transition-opacity disabled:cursor-not-allowed disabled:opacity-40 ${
+                          isSelected
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-foreground text-card'
+                        }`}
                       >
-                        {partner.available
-                          ? isBestMatch
-                            ? 'Select Best Match'
-                            : 'Select Provider'
-                          : 'Currently Busy'}
+                        {!partner.available
+                          ? 'Currently Busy'
+                          : isSelected
+                            ? '✓ Provider Selected'
+                            : isBestMatch
+                              ? 'Select Best Match'
+                              : 'Select Provider'}
                       </button>
                     </motion.div>
                   )
