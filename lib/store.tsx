@@ -15,6 +15,7 @@ import {
   getItem,
   getService,
   ORDER_STATUS_STEPS,
+  PARTNERS,
   SEED_PAST_ORDER,
 } from './data'
 import type {
@@ -25,6 +26,7 @@ import type {
   Coupon,
   Order,
   OrderStatus,
+  Partner,
   View,
 } from './types'
 
@@ -40,7 +42,13 @@ interface ServiceGroup {
   serviceId: string
   serviceName: string
   care: CareLevel
-  lines: { itemId: string; name: string; unit: string; qty: number; unitPrice: number }[]
+  lines: {
+    itemId: string
+    name: string
+    unit: string
+    qty: number
+    unitPrice: number
+  }[]
   itemCount: number
   amount: number
 }
@@ -75,6 +83,10 @@ interface StoreValue {
   applyCoupon: (code: string) => boolean
   removeCoupon: () => void
 
+  // provider selection
+  selectedProvider: Partner | null
+  setSelectedProvider: (provider: Partner | null) => void
+
   // checkout
   address: Address
   setAddress: (a: Address) => void
@@ -105,7 +117,9 @@ interface StoreValue {
 const StoreContext = createContext<StoreValue | null>(null)
 
 function linePrice(unitPrice: number, care: CareLevel) {
-  return Math.round(unitPrice * (care === 'express' ? EXPRESS_MULTIPLIER : 1))
+  return Math.round(
+    unitPrice * (care === 'express' ? EXPRESS_MULTIPLIER : 1),
+  )
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -116,74 +130,181 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [care, setCareState] = useState<CareSelection>({})
   const [coupon, setCoupon] = useState<Coupon | null>(null)
   const [couponError, setCouponError] = useState<string | null>(null)
+
   const [address, setAddress] = useState<Address>(ADDRESSES[1])
   const [pickupDate, setPickupDate] = useState('Today')
   const [pickupSlot, setPickupSlot] = useState('')
   const [payment, setPayment] = useState('')
+
+  // Provider selection
+  const [selectedProvider, setSelectedProvider] =
+    useState<Partner | null>(PARTNERS[0] ?? null)
+
   const [location, setLocation] = useState('Chennai')
   const [orders, setOrders] = useState<Order[]>([SEED_PAST_ORDER])
   const [toasts, setToasts] = useState<Toast[]>([])
 
   const navigate = useCallback((next: View) => {
     setHistory((h) => [...h, next])
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'auto' })
+
+    if (typeof window !== 'undefined') {
+      window.scrollTo({
+        top: 0,
+        behavior: 'auto',
+      })
+    }
   }, [])
 
   const back = useCallback(() => {
-    setHistory((h) => (h.length > 1 ? h.slice(0, -1) : h))
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'auto' })
+    setHistory((h) =>
+      h.length > 1 ? h.slice(0, -1) : h,
+    )
+
+    if (typeof window !== 'undefined') {
+      window.scrollTo({
+        top: 0,
+        behavior: 'auto',
+      })
+    }
   }, [])
 
-  const toast = useCallback((message: string, variant: Toast['variant'] = 'success') => {
-    const id = Date.now() + Math.random()
-    setToasts((t) => [...t, { id, message, variant }])
-    setTimeout(() => {
-      setToasts((t) => t.filter((x) => x.id !== id))
-    }, 2600)
-  }, [])
+  const toast = useCallback(
+    (
+      message: string,
+      variant: Toast['variant'] = 'success',
+    ) => {
+      const id = Date.now() + Math.random()
+
+      setToasts((t) => [
+        ...t,
+        {
+          id,
+          message,
+          variant,
+        },
+      ])
+
+      setTimeout(() => {
+        setToasts((t) =>
+          t.filter((x) => x.id !== id),
+        )
+      }, 2600)
+    },
+    [],
+  )
 
   const dismissToast = useCallback((id: number) => {
-    setToasts((t) => t.filter((x) => x.id !== id))
+    setToasts((t) =>
+      t.filter((x) => x.id !== id),
+    )
   }, [])
 
-  const setCare = useCallback((serviceId: string, level: CareLevel) => {
-    setCareState((c) => ({ ...c, [serviceId]: level }))
-  }, [])
+  const setCare = useCallback(
+    (serviceId: string, level: CareLevel) => {
+      setCareState((c) => ({
+        ...c,
+        [serviceId]: level,
+      }))
+    },
+    [],
+  )
 
   const getQty = useCallback(
     (serviceId: string, itemId: string) =>
-      cart.find((l) => l.serviceId === serviceId && l.itemId === itemId)?.qty ?? 0,
+      cart.find(
+        (l) =>
+          l.serviceId === serviceId &&
+          l.itemId === itemId,
+      )?.qty ?? 0,
     [cart],
   )
 
-  const setQty = useCallback((serviceId: string, itemId: string, qty: number) => {
-    setCart((c) => {
-      const existing = c.find((l) => l.serviceId === serviceId && l.itemId === itemId)
-      if (qty <= 0) {
-        return c.filter((l) => !(l.serviceId === serviceId && l.itemId === itemId))
-      }
-      if (existing) {
-        return c.map((l) =>
-          l.serviceId === serviceId && l.itemId === itemId ? { ...l, qty } : l,
+  const setQty = useCallback(
+    (
+      serviceId: string,
+      itemId: string,
+      qty: number,
+    ) => {
+      setCart((c) => {
+        const existing = c.find(
+          (l) =>
+            l.serviceId === serviceId &&
+            l.itemId === itemId,
         )
-      }
-      return [...c, { serviceId, itemId, qty }]
-    })
-    setCareState((cs) => (cs[serviceId] ? cs : { ...cs, [serviceId]: 'standard' }))
-  }, [])
+
+        if (qty <= 0) {
+          return c.filter(
+            (l) =>
+              !(
+                l.serviceId === serviceId &&
+                l.itemId === itemId
+              ),
+          )
+        }
+
+        if (existing) {
+          return c.map((l) =>
+            l.serviceId === serviceId &&
+            l.itemId === itemId
+              ? { ...l, qty }
+              : l,
+          )
+        }
+
+        return [
+          ...c,
+          {
+            serviceId,
+            itemId,
+            qty,
+          },
+        ]
+      })
+
+      setCareState((cs) =>
+        cs[serviceId]
+          ? cs
+          : {
+              ...cs,
+              [serviceId]: 'standard',
+            },
+      )
+    },
+    [],
+  )
 
   const addItem = useCallback(
     (serviceId: string, itemId: string) => {
-      const current = cart.find((l) => l.serviceId === serviceId && l.itemId === itemId)?.qty ?? 0
-      setQty(serviceId, itemId, current + 1)
+      const current =
+        cart.find(
+          (l) =>
+            l.serviceId === serviceId &&
+            l.itemId === itemId,
+        )?.qty ?? 0
+
+      setQty(
+        serviceId,
+        itemId,
+        current + 1,
+      )
     },
     [cart, setQty],
   )
 
   const removeItem = useCallback(
     (serviceId: string, itemId: string) => {
-      const current = cart.find((l) => l.serviceId === serviceId && l.itemId === itemId)?.qty ?? 0
-      setQty(serviceId, itemId, current - 1)
+      const current =
+        cart.find(
+          (l) =>
+            l.serviceId === serviceId &&
+            l.itemId === itemId,
+        )?.qty ?? 0
+
+      setQty(
+        serviceId,
+        itemId,
+        current - 1,
+      )
     },
     [cart, setQty],
   )
@@ -193,16 +314,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCareState({})
     setCoupon(null)
     setCouponError(null)
+    setSelectedProvider(null)
   }, [])
 
   const groups = useMemo<ServiceGroup[]>(() => {
-    const map = new Map<string, ServiceGroup>()
+    const map = new Map<
+      string,
+      ServiceGroup
+    >()
+
     for (const line of cart) {
-      const service = getService(line.serviceId)
-      const item = getItem(line.serviceId, line.itemId)
+      const service = getService(
+        line.serviceId,
+      )
+
+      const item = getItem(
+        line.serviceId,
+        line.itemId,
+      )
+
       if (!service || !item) continue
-      const level = care[line.serviceId] ?? 'standard'
-      const unitPrice = linePrice(item.price, level)
+
+      const level =
+        care[line.serviceId] ??
+        'standard'
+
+      const unitPrice = linePrice(
+        item.price,
+        level,
+      )
+
       if (!map.has(line.serviceId)) {
         map.set(line.serviceId, {
           serviceId: line.serviceId,
@@ -213,66 +354,148 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           amount: 0,
         })
       }
-      const g = map.get(line.serviceId)!
-      g.lines.push({
+
+      const group =
+        map.get(line.serviceId)!
+
+      group.lines.push({
         itemId: line.itemId,
         name: item.name,
         unit: item.unit,
         qty: line.qty,
         unitPrice,
       })
-      g.itemCount += line.qty
-      g.amount += unitPrice * line.qty
+
+      group.itemCount += line.qty
+      group.amount +=
+        unitPrice * line.qty
     }
+
     return Array.from(map.values())
   }, [cart, care])
 
-  const totalItems = useMemo(() => cart.reduce((n, l) => n + l.qty, 0), [cart])
-  const subtotal = useMemo(() => groups.reduce((s, g) => s + g.amount, 0), [groups])
+  const totalItems = useMemo(
+    () =>
+      cart.reduce(
+        (n, l) => n + l.qty,
+        0,
+      ),
+    [cart],
+  )
+
+  const subtotal = useMemo(
+    () =>
+      groups.reduce(
+        (s, g) => s + g.amount,
+        0,
+      ),
+    [groups],
+  )
 
   const discount = useMemo(() => {
-    if (!coupon || subtotal === 0) return 0
-    if (coupon.type === 'freeDelivery') return 0
-    if (coupon.type === 'percent') {
-      const raw = Math.round((subtotal * coupon.value) / 100)
-      return coupon.cap ? Math.min(raw, coupon.cap) : raw
+    if (!coupon || subtotal === 0) {
+      return 0
     }
+
+    if (coupon.type === 'freeDelivery') {
+      return 0
+    }
+
+    if (coupon.type === 'percent') {
+      const raw = Math.round(
+        (subtotal * coupon.value) / 100,
+      )
+
+      return coupon.cap
+        ? Math.min(raw, coupon.cap)
+        : raw
+    }
+
     if (coupon.type === 'flat') {
       if (coupon.serviceId) {
-        const g = groups.find((x) => x.serviceId === coupon.serviceId)
-        if (!g) return 0
-        return Math.min(coupon.value, g.amount)
+        const group = groups.find(
+          (x) =>
+            x.serviceId ===
+            coupon.serviceId,
+        )
+
+        if (!group) return 0
+
+        return Math.min(
+          coupon.value,
+          group.amount,
+        )
       }
-      return Math.min(coupon.value, subtotal)
+
+      return Math.min(
+        coupon.value,
+        subtotal,
+      )
     }
+
     return 0
   }, [coupon, subtotal, groups])
 
   const delivery = useMemo(() => {
-    if (subtotal === 0) return 0
-    if (coupon?.type === 'freeDelivery') return 0
+    if (subtotal === 0) {
+      return 0
+    }
+
+    if (
+      coupon?.type ===
+      'freeDelivery'
+    ) {
+      return 0
+    }
+
     return DELIVERY_FEE
   }, [subtotal, coupon])
 
-  const total = Math.max(0, subtotal + delivery - discount)
+  const total = Math.max(
+    0,
+    subtotal +
+      delivery -
+      discount,
+  )
 
   const applyCoupon = useCallback(
     (code: string) => {
-      const clean = code.trim().toUpperCase()
+      const clean =
+        code.trim().toUpperCase()
+
       const found = COUPONS[clean]
+
       if (!found) {
-        setCouponError('This coupon code is not valid.')
+        setCouponError(
+          'This coupon code is not valid.',
+        )
         setCoupon(null)
         return false
       }
-      if (found.serviceId && !cart.some((l) => l.serviceId === found.serviceId)) {
-        const svc = getService(found.serviceId)
-        setCouponError(`Add a ${svc?.name} item to use ${clean}.`)
+
+      if (
+        found.serviceId &&
+        !cart.some(
+          (l) =>
+            l.serviceId ===
+            found.serviceId,
+        )
+      ) {
+        const service = getService(
+          found.serviceId,
+        )
+
+        setCouponError(
+          `Add a ${service?.name} item to use ${clean}.`,
+        )
+
         setCoupon(null)
         return false
       }
+
       setCoupon(found)
       setCouponError(null)
+
       return true
     },
     [cart],
@@ -283,62 +506,164 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCouponError(null)
   }, [])
 
-  const getOrder = useCallback((id: string) => orders.find((o) => o.id === id), [orders])
+  const getOrder = useCallback(
+    (id: string) =>
+      orders.find(
+        (o) => o.id === id,
+      ),
+    [orders],
+  )
 
-  const placeOrder = useCallback((): Order => {
-    const id = 'CLN' + Math.floor(10000 + Math.random() * 89999)
-    const order: Order = {
-      id,
-      createdAt: Date.now(),
-      status: 'scheduled',
-      services: groups.map((g) => ({
-        serviceId: g.serviceId,
-        serviceName: g.serviceName,
-        itemCount: g.itemCount,
-        amount: g.amount,
-      })),
-      lines: [...cart],
-      care: { ...care },
+  const placeOrder = useCallback(
+    (): Order => {
+      const id =
+        'CLN' +
+        Math.floor(
+          10000 +
+            Math.random() *
+              89999,
+        )
+
+      const order: Order = {
+        id,
+        createdAt: Date.now(),
+        status: 'scheduled',
+
+        // Save selected provider
+        providerId:
+          selectedProvider?.id,
+
+        services: groups.map(
+          (g) => ({
+            serviceId:
+              g.serviceId,
+            serviceName:
+              g.serviceName,
+            itemCount:
+              g.itemCount,
+            amount: g.amount,
+          }),
+        ),
+
+        lines: [...cart],
+        care: { ...care },
+        address,
+        pickupDate,
+        pickupSlot:
+          pickupSlot ||
+          '6–8 PM',
+        payment:
+          payment || 'UPI',
+        subtotal,
+        delivery,
+        discount,
+        total,
+        couponCode:
+          coupon?.code,
+      }
+
+      setOrders((o) => [
+        order,
+        ...o,
+      ])
+
+      setCart([])
+      setCareState({})
+      setCoupon(null)
+      setCouponError(null)
+      setPickupSlot('')
+      setPayment('')
+
+      return order
+    },
+    [
+      groups,
+      cart,
+      care,
       address,
       pickupDate,
-      pickupSlot: pickupSlot || '6–8 PM',
-      payment: payment || 'UPI',
+      pickupSlot,
+      payment,
       subtotal,
       delivery,
       discount,
       total,
-      couponCode: coupon?.code,
-    }
-    setOrders((o) => [order, ...o])
-    setCart([])
-    setCareState({})
-    setCoupon(null)
-    setCouponError(null)
-    setPickupSlot('')
-    setPayment('')
-    return order
-  }, [groups, cart, care, address, pickupDate, pickupSlot, payment, subtotal, delivery, discount, total, coupon])
+      coupon,
+      selectedProvider,
+    ],
+  )
 
-  const advanceStatus = useCallback((orderId: string, status: OrderStatus) => {
-    setOrders((o) => o.map((x) => (x.id === orderId ? { ...x, status } : x)))
-  }, [])
+  const advanceStatus = useCallback(
+    (
+      orderId: string,
+      status: OrderStatus,
+    ) => {
+      setOrders((o) =>
+        o.map((x) =>
+          x.id === orderId
+            ? {
+                ...x,
+                status,
+              }
+            : x,
+        ),
+      )
+    },
+    [],
+  )
 
   const reorder = useCallback(
     (orderId: string) => {
-      const order = orders.find((o) => o.id === orderId)
+      const order =
+        orders.find(
+          (o) => o.id === orderId,
+        )
+
       if (!order) return
+
       setCart((c) => {
         const next = [...c]
+
         for (const line of order.lines) {
-          const existing = next.find(
-            (l) => l.serviceId === line.serviceId && l.itemId === line.itemId,
-          )
-          if (existing) existing.qty += line.qty
-          else next.push({ ...line })
+          const existing =
+            next.find(
+              (l) =>
+                l.serviceId ===
+                  line.serviceId &&
+                l.itemId ===
+                  line.itemId,
+            )
+
+          if (existing) {
+            existing.qty += line.qty
+          } else {
+            next.push({
+              ...line,
+            })
+          }
         }
+
         return next
       })
-      setCareState((cs) => ({ ...order.care, ...cs }))
+
+      setCareState((cs) => ({
+        ...order.care,
+        ...cs,
+      }))
+
+      // Restore provider on reorder
+      const provider =
+        PARTNERS.find(
+          (p) =>
+            p.id ===
+            order.providerId,
+        )
+
+      if (provider) {
+        setSelectedProvider(
+          provider,
+        )
+      }
     },
     [orders],
   )
@@ -347,6 +672,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     view,
     navigate,
     back,
+
     cart,
     care,
     addItem,
@@ -357,14 +683,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearCart,
     groups,
     totalItems,
+
     subtotal,
     delivery,
     discount,
     total,
+
     coupon,
     couponError,
     applyCoupon,
     removeCoupon,
+
+    selectedProvider,
+    setSelectedProvider,
+
     address,
     setAddress,
     pickupDate,
@@ -373,24 +705,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setPickupSlot,
     payment,
     setPayment,
+
     location,
     setLocation,
+
     orders,
     placeOrder,
     advanceStatus,
     reorder,
     getOrder,
+
     toasts,
     toast,
     dismissToast,
   }
 
-  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
+  return (
+    <StoreContext.Provider
+      value={value}
+    >
+      {children}
+    </StoreContext.Provider>
+  )
 }
 
 export function useStore() {
-  const ctx = useContext(StoreContext)
-  if (!ctx) throw new Error('useStore must be used within StoreProvider')
+  const ctx =
+    useContext(StoreContext)
+
+  if (!ctx) {
+    throw new Error(
+      'useStore must be used within StoreProvider',
+    )
+  }
+
   return ctx
 }
 

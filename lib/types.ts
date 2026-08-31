@@ -88,6 +88,7 @@ export interface Order {
   id: string
   createdAt: number
   status: OrderStatus
+  providerId?: string
   services: OrderServiceSummary[]
   lines: CartLine[]
   care: CareSelection
