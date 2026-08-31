@@ -2,7 +2,15 @@
 
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ShoppingBag, Tag, X } from 'lucide-react'
+import {
+  Check,
+  MapPin,
+  ShieldCheck,
+  ShoppingBag,
+  Star,
+  Tag,
+  X,
+} from 'lucide-react'
 import { getItem, getService, OFFERS } from '@/lib/data'
 import { rupees } from '@/lib/format'
 import { Icon } from '@/lib/icons'
@@ -25,23 +33,29 @@ export function BagScreen() {
     navigate,
     totalItems,
     setCare,
+    selectedProvider,
   } = useStore()
+
   const [code, setCode] = useState('')
 
   if (totalItems === 0) {
     return (
       <div className="min-h-dvh bg-background">
         <ScreenHeader title="CARLAUN Bag" />
+
         <div className="flex flex-col items-center justify-center px-6 py-24 text-center">
           <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-secondary">
             <ShoppingBag className="h-9 w-9 text-muted-foreground" />
           </div>
+
           <h2 className="mt-5 font-display text-xl font-bold text-foreground">
             Your CARLAUN Bag is empty
           </h2>
+
           <p className="mt-1.5 text-pretty text-sm text-muted-foreground">
             Add items from any service — they all get picked up together.
           </p>
+
           <button
             onClick={() => navigate({ name: 'home' })}
             className="mt-6 rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-card"
@@ -62,17 +76,104 @@ export function BagScreen() {
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <ShoppingBag className="h-4.5 w-4.5" />
         </div>
+
         <p className="text-sm leading-snug text-foreground">
-          <span className="font-semibold">One pickup for {groups.length}{' '}
-          {groups.length === 1 ? 'service' : 'services'}.</span>{' '}
-          <span className="text-muted-foreground">Everything travels together.</span>
+          <span className="font-semibold">
+            One pickup for {groups.length}{' '}
+            {groups.length === 1 ? 'service' : 'services'}.
+          </span>{' '}
+          <span className="text-muted-foreground">
+            Everything travels together.
+          </span>
         </p>
       </div>
+
+      {/* Selected Provider */}
+      {selectedProvider && (
+        <div className="mx-4 mt-4 overflow-hidden rounded-2xl border border-primary/40 bg-card">
+          <div className="flex items-center justify-between border-b border-primary/20 bg-primary/5 px-4 py-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                Selected Provider
+              </p>
+
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Your CARLAUN service partner
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold text-primary-foreground">
+              <Check className="h-3 w-3" />
+              Selected
+            </div>
+          </div>
+
+          <div className="p-4">
+            <div className="flex items-start gap-3">
+              {/* Provider avatar */}
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary font-bold text-primary-foreground">
+                {selectedProvider.name
+                  .split(' ')
+                  .map((word) => word[0])
+                  .slice(0, 2)
+                  .join('')}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <p className="truncate font-semibold text-foreground">
+                    {selectedProvider.name}
+                  </p>
+
+                  {selectedProvider.verified && (
+                    <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
+                  )}
+                </div>
+
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Star className="h-3 w-3 fill-current text-primary" />
+                    {selectedProvider.rating}
+                  </span>
+
+                  <span className="flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {selectedProvider.distance}
+                  </span>
+                </div>
+
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {selectedProvider.turnaround}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+              <span>
+                {selectedProvider.experience} yrs experience
+              </span>
+
+              <span>•</span>
+
+              <span>
+                {selectedProvider.completedJobs} jobs completed
+              </span>
+
+              <span>•</span>
+
+              <span>
+                {selectedProvider.serviceArea}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Service groups */}
       <div className="space-y-4 px-4 py-4">
         {groups.map((g) => {
           const service = getService(g.serviceId)!
+
           return (
             <div
               key={g.serviceId}
@@ -84,21 +185,30 @@ export function BagScreen() {
                     className="flex h-8 w-8 items-center justify-center rounded-lg text-card"
                     style={{ backgroundColor: service.accent }}
                   >
-                    <Icon name={service.icon} className="h-4 w-4" />
+                    <Icon
+                      name={service.icon}
+                      className="h-4 w-4"
+                    />
                   </div>
+
                   <div>
                     <p className="font-display text-sm font-bold text-foreground">
                       {g.serviceName}
                     </p>
+
                     <p className="text-xs text-muted-foreground">
-                      {g.itemCount} {g.itemCount === 1 ? 'item' : 'items'}
+                      {g.itemCount}{' '}
+                      {g.itemCount === 1 ? 'item' : 'items'}
                     </p>
                   </div>
                 </div>
-                {/* care pill toggle */}
+
+                {/* Care pill toggle */}
                 <div className="flex rounded-full bg-secondary p-0.5 text-xs font-semibold">
                   <button
-                    onClick={() => setCare(g.serviceId, 'standard')}
+                    onClick={() =>
+                      setCare(g.serviceId, 'standard')
+                    }
                     className={`rounded-full px-2.5 py-1 transition-colors ${
                       g.care === 'standard'
                         ? 'bg-foreground text-card'
@@ -107,8 +217,11 @@ export function BagScreen() {
                   >
                     Std
                   </button>
+
                   <button
-                    onClick={() => setCare(g.serviceId, 'express')}
+                    onClick={() =>
+                      setCare(g.serviceId, 'express')
+                    }
                     className={`rounded-full px-2.5 py-1 transition-colors ${
                       g.care === 'express'
                         ? 'bg-primary text-primary-foreground'
@@ -122,7 +235,11 @@ export function BagScreen() {
 
               <div className="divide-y divide-border">
                 {g.lines.map((line) => {
-                  const item = getItem(g.serviceId, line.itemId)!
+                  const item = getItem(
+                    g.serviceId,
+                    line.itemId,
+                  )!
+
                   return (
                     <div
                       key={line.itemId}
@@ -132,22 +249,43 @@ export function BagScreen() {
                         <p className="text-sm font-medium text-foreground">
                           {item.name}
                         </p>
+
                         <p className="text-xs text-muted-foreground">
                           {rupees(line.unitPrice)} × {line.qty}
                         </p>
                       </div>
+
                       <div className="flex items-center gap-4">
                         <span className="text-sm font-semibold text-foreground">
-                          {rupees(line.unitPrice * line.qty)}
+                          {rupees(
+                            line.unitPrice * line.qty,
+                          )}
                         </span>
+
                         <QuantityStepper
                           qty={line.qty}
                           size="sm"
-                          onAdd={() => setQty(g.serviceId, line.itemId, line.qty + 1)}
-                          onRemove={() =>
-                            setQty(g.serviceId, line.itemId, line.qty - 1)
+                          onAdd={() =>
+                            setQty(
+                              g.serviceId,
+                              line.itemId,
+                              line.qty + 1,
+                            )
                           }
-                          onSet={(n) => setQty(g.serviceId, line.itemId, n)}
+                          onRemove={() =>
+                            setQty(
+                              g.serviceId,
+                              line.itemId,
+                              line.qty - 1,
+                            )
+                          }
+                          onSet={(n) =>
+                            setQty(
+                              g.serviceId,
+                              line.itemId,
+                              n,
+                            )
+                          }
                         />
                       </div>
                     </div>
@@ -162,19 +300,28 @@ export function BagScreen() {
       {/* Coupon */}
       <div className="px-4 pb-2">
         <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <Tag className="h-3.5 w-3.5" /> Apply Coupon
+          <Tag className="h-3.5 w-3.5" />
+          Apply Coupon
         </p>
+
         {coupon ? (
           <div className="flex items-center justify-between rounded-2xl border border-primary/40 bg-primary/8 px-4 py-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Check className="h-4 w-4" />
               </div>
+
               <div>
-                <p className="text-sm font-bold text-foreground">{coupon.code}</p>
-                <p className="text-xs text-muted-foreground">{coupon.label}</p>
+                <p className="text-sm font-bold text-foreground">
+                  {coupon.code}
+                </p>
+
+                <p className="text-xs text-muted-foreground">
+                  {coupon.label}
+                </p>
               </div>
             </div>
+
             <button
               onClick={() => {
                 removeCoupon()
@@ -191,10 +338,13 @@ export function BagScreen() {
             <div className="flex gap-2">
               <input
                 value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                onChange={(e) =>
+                  setCode(e.target.value.toUpperCase())
+                }
                 placeholder="Enter code"
                 className="h-11 flex-1 rounded-xl border border-border bg-card px-4 text-sm font-medium uppercase tracking-wide text-foreground outline-none placeholder:font-normal placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground focus:border-primary"
               />
+
               <button
                 onClick={() => applyCoupon(code)}
                 disabled={!code.trim()}
@@ -203,10 +353,14 @@ export function BagScreen() {
                 Apply
               </button>
             </div>
+
             {couponError && (
-              <p className="mt-2 text-xs font-medium text-destructive">{couponError}</p>
+              <p className="mt-2 text-xs font-medium text-destructive">
+                {couponError}
+              </p>
             )}
-            {/* quick-pick offers */}
+
+            {/* Quick-pick offers */}
             <div className="mt-3 flex flex-wrap gap-2">
               {OFFERS.map((o) => (
                 <button
@@ -230,25 +384,54 @@ export function BagScreen() {
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Bill Details
         </p>
+
         <div className="space-y-2 text-sm">
-          <Row label="Item Total" value={rupees(subtotal)} />
-          <Row label="Pickup & Delivery" value={delivery === 0 ? 'FREE' : rupees(delivery)} />
+          <Row
+            label="Item Total"
+            value={rupees(subtotal)}
+          />
+
+          <Row
+            label="Pickup & Delivery"
+            value={
+              delivery === 0
+                ? 'FREE'
+                : rupees(delivery)
+            }
+          />
+
           <AnimatePresence>
             {discount > 0 && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
+                initial={{
+                  opacity: 0,
+                  height: 0,
+                }}
+                animate={{
+                  opacity: 1,
+                  height: 'auto',
+                }}
+                exit={{
+                  opacity: 0,
+                  height: 0,
+                }}
               >
-                <Row label={`Discount (${coupon?.code})`} value={`- ${rupees(discount)}`} accent />
+                <Row
+                  label={`Discount (${coupon?.code})`}
+                  value={`- ${rupees(discount)}`}
+                  accent
+                />
               </motion.div>
             )}
           </AnimatePresence>
+
           <div className="my-2 border-t border-dashed border-border" />
+
           <div className="flex items-center justify-between">
             <span className="font-display text-base font-bold text-foreground">
               To Pay
             </span>
+
             <span className="font-display text-lg font-bold text-foreground">
               {rupees(total)}
             </span>
@@ -263,12 +446,16 @@ export function BagScreen() {
             <p className="font-display text-lg font-bold leading-none text-foreground">
               {rupees(total)}
             </p>
+
             <p className="mt-0.5 text-xs text-muted-foreground">
               {totalItems} items • {groups.length} services
             </p>
           </div>
+
           <button
-            onClick={() => navigate({ name: 'checkout' })}
+            onClick={() =>
+              navigate({ name: 'checkout' })
+            }
             className="ml-auto flex-1 rounded-full bg-primary py-3.5 text-center text-sm font-semibold text-primary-foreground"
           >
             Schedule Pickup
@@ -290,8 +477,17 @@ function Row({
 }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={accent ? 'font-semibold text-primary' : 'font-medium text-foreground'}>
+      <span className="text-muted-foreground">
+        {label}
+      </span>
+
+      <span
+        className={
+          accent
+            ? 'font-semibold text-primary'
+            : 'font-medium text-foreground'
+        }
+      >
         {value}
       </span>
     </div>
