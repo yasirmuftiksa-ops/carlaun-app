@@ -138,7 +138,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Provider selection
   const [selectedProvider, setSelectedProvider] =
-    useState<Partner | null>(PARTNERS[0] ?? null)
+  useState<Partner | null>(null)
 
   const [location, setLocation] = useState('Chennai')
   const [orders, setOrders] = useState<Order[]>([SEED_PAST_ORDER])
