@@ -257,7 +257,7 @@ export function BagScreen() {
       </div>
 
       {/* Sticky checkout */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-24 z-30 border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-md items-center gap-3">
           <div className="min-w-0">
             <p className="font-display text-lg font-bold leading-none text-foreground">

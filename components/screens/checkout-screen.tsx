@@ -131,7 +131,7 @@ export function CheckoutScreen() {
               return (
                 <button
                   key={p.id}
-                  onClick={() => setPayment(p.label)}
+                  onClick={() => setPayment(p.id)}
                   className={`flex w-full items-center gap-3 rounded-2xl border bg-card px-4 py-3 text-left transition-colors ${
                     active ? 'border-primary' : 'border-border'
                   }`}
@@ -188,7 +188,7 @@ export function CheckoutScreen() {
       </div>
 
       {/* Sticky place order */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-24 z-30 border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
         <button
           onClick={handlePlace}
           disabled={placing}
