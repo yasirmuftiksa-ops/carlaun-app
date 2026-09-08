@@ -4,10 +4,12 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react'
+
 import {
   ADDRESSES,
   COUPONS,
@@ -16,10 +18,13 @@ import {
   getService,
   ORDER_STATUS_STEPS,
   PARTNERS,
-  SEED_PAST_ORDER,
 } from './data'
+
+export { ORDER_STATUS_STEPS }
+
 import type {
   Address,
+  BookingType,
   CareLevel,
   CareSelection,
   CartLine,
@@ -27,15 +32,46 @@ import type {
   Order,
   OrderStatus,
   Partner,
+  PaymentMethod,
+  PaymentStatus,
   View,
 } from './types'
 
 const DELIVERY_FEE = 40
 
+const ORDERS_STORAGE_KEY = 'nexa_link_orders'
+const NOTIFICATIONS_STORAGE_KEY =
+  'nexa_link_notifications'
+
 export interface Toast {
   id: number
   message: string
   variant: 'success' | 'error' | 'info'
+}
+
+export type NotificationAudience =
+  | 'customer'
+  | 'provider'
+  | 'admin'
+
+export type NotificationType =
+  | 'booking'
+  | 'status'
+  | 'payment'
+  | 'invoice'
+  | 'emergency'
+  | 'system'
+
+export interface Notification {
+  id: string
+  title: string
+  message: string
+  type: NotificationType
+  audience: NotificationAudience
+  orderId?: string
+  providerId?: string
+  createdAt: number
+  read: boolean
 }
 
 interface ServiceGroup {
@@ -54,169 +90,639 @@ interface ServiceGroup {
 }
 
 interface StoreValue {
-  // navigation
   view: View
   navigate: (view: View) => void
   back: () => void
 
-  // cart
   cart: CartLine[]
   care: CareSelection
-  addItem: (serviceId: string, itemId: string) => void
-  removeItem: (serviceId: string, itemId: string) => void
-  setQty: (serviceId: string, itemId: string, qty: number) => void
-  getQty: (serviceId: string, itemId: string) => number
-  setCare: (serviceId: string, level: CareLevel) => void
+
+  addItem: (
+    serviceId: string,
+    itemId: string,
+  ) => void
+
+  removeItem: (
+    serviceId: string,
+    itemId: string,
+  ) => void
+
+  setQty: (
+    serviceId: string,
+    itemId: string,
+    qty: number,
+  ) => void
+
+  getQty: (
+    serviceId: string,
+    itemId: string,
+  ) => number
+
+  setCare: (
+    serviceId: string,
+    level: CareLevel,
+  ) => void
+
   clearCart: () => void
+
   groups: ServiceGroup[]
   totalItems: number
 
-  // pricing
   subtotal: number
   delivery: number
   discount: number
   total: number
 
-  // coupon
   coupon: Coupon | null
   couponError: string | null
+
   applyCoupon: (code: string) => boolean
   removeCoupon: () => void
 
-  // provider selection
-  selectedProvider: Partner | null
-  setSelectedProvider: (provider: Partner | null) => void
+  selectedProviders: Record<string, Partner>
 
-  // checkout
+  setSelectedProvider: (
+    serviceId: string,
+    provider: Partner,
+  ) => void
+
+  getSelectedProvider: (
+    serviceId: string,
+  ) => Partner | null
+
   address: Address
-  setAddress: (a: Address) => void
+  setAddress: (address: Address) => void
+
+  bookingType: BookingType
+  setBookingType: (
+    type: BookingType,
+  ) => void
+
   pickupDate: string
-  setPickupDate: (d: string) => void
+  setPickupDate: (date: string) => void
+
   pickupSlot: string
-  setPickupSlot: (s: string) => void
+  setPickupSlot: (slot: string) => void
+
   payment: string
-  setPayment: (p: string) => void
+  setPayment: (payment: string) => void
 
-  // location
   location: string
-  setLocation: (l: string) => void
+  setLocation: (location: string) => void
 
-  // orders
   orders: Order[]
-  placeOrder: () => Order
-  advanceStatus: (orderId: string, status: OrderStatus) => void
-  reorder: (orderId: string) => void
-  getOrder: (id: string) => Order | undefined
 
-  // toasts
+  placeOrder: () => Order
+
+  advanceStatus: (
+    orderId: string,
+    status: OrderStatus,
+  ) => void
+
+  reorder: (orderId: string) => void
+
+  getOrder: (
+    id: string,
+  ) => Order | undefined
+
+  notifications: Notification[]
+
+  unreadNotificationCount: number
+
+  addNotification: (
+    notification: Omit<
+      Notification,
+      'id' | 'createdAt' | 'read'
+    >,
+  ) => void
+
+  markNotificationRead: (
+    notificationId: string,
+  ) => void
+
+  markAllNotificationsRead: () => void
+
+  clearNotifications: () => void
+
+  removeNotification: (
+    notificationId: string,
+  ) => void
+
   toasts: Toast[]
-  toast: (message: string, variant?: Toast['variant']) => void
+
+  toast: (
+    message: string,
+    variant?: Toast['variant'],
+  ) => void
+
   dismissToast: (id: number) => void
 }
 
-const StoreContext = createContext<StoreValue | null>(null)
+const StoreContext =
+  createContext<StoreValue | null>(null)
 
-function linePrice(unitPrice: number, care: CareLevel) {
+function linePrice(
+  unitPrice: number,
+  care: CareLevel,
+): number {
   return Math.round(
-    unitPrice * (care === 'express' ? EXPRESS_MULTIPLIER : 1),
+    unitPrice *
+      (care === 'express'
+        ? EXPRESS_MULTIPLIER
+        : 1),
   )
 }
 
-export function StoreProvider({ children }: { children: ReactNode }) {
-  const [history, setHistory] = useState<View[]>([{ name: 'home' }])
-  const view = history[history.length - 1]
+function normalizePaymentMethod(
+  payment: string,
+): PaymentMethod {
+  const clean = payment
+    .trim()
+    .toLowerCase()
 
-  const [cart, setCart] = useState<CartLine[]>([])
-  const [care, setCareState] = useState<CareSelection>({})
-  const [coupon, setCoupon] = useState<Coupon | null>(null)
-  const [couponError, setCouponError] = useState<string | null>(null)
+  if (
+    clean.includes('card') ||
+    clean.includes('credit') ||
+    clean.includes('debit')
+  ) {
+    return 'Card'
+  }
 
-  const [address, setAddress] = useState<Address>(ADDRESSES[1])
-  const [pickupDate, setPickupDate] = useState('Today')
-  const [pickupSlot, setPickupSlot] = useState('')
-  const [payment, setPayment] = useState('')
+  if (
+    clean.includes('net') ||
+    clean.includes('bank')
+  ) {
+    return 'Net Banking'
+  }
 
-  // Provider selection
-  const [selectedProvider, setSelectedProvider] =
-  useState<Partner | null>(null)
+  if (
+    clean.includes('cash') ||
+    clean.includes('cod')
+  ) {
+    return 'Cash on Delivery'
+  }
 
-  const [location, setLocation] = useState('Chennai')
-  const [orders, setOrders] = useState<Order[]>([SEED_PAST_ORDER])
-  const [toasts, setToasts] = useState<Toast[]>([])
+  return 'UPI'
+}
 
-  const navigate = useCallback((next: View) => {
-    setHistory((h) => [...h, next])
+function createPaymentDetails(
+  payment: string,
+) {
+  const method =
+    normalizePaymentMethod(payment)
 
-    if (typeof window !== 'undefined') {
-      window.scrollTo({
-        top: 0,
-        behavior: 'auto',
-      })
+  const isCash =
+    method === 'Cash on Delivery'
+
+  const status: PaymentStatus =
+    isCash ? 'pending' : 'paid'
+
+  const transactionId = isCash
+    ? undefined
+    : `NLTXN-${Date.now()
+        .toString(36)
+        .toUpperCase()}-${Math.floor(
+        100 + Math.random() * 900,
+      )}`
+
+  return {
+    method,
+    status,
+    transactionId,
+    paidAt: isCash
+      ? undefined
+      : Date.now(),
+  }
+}
+
+function createInvoiceNumber(): string {
+  const date = new Date()
+
+  const year = date.getFullYear()
+
+  const month = String(
+    date.getMonth() + 1,
+  ).padStart(2, '0')
+
+  const day = String(
+    date.getDate(),
+  ).padStart(2, '0')
+
+  const random = Math.floor(
+    1000 + Math.random() * 9000,
+  )
+
+  return `NXL-${year}${month}${day}-${random}`
+}
+
+function createNotificationId(): string {
+  return `NXL-NOT-${Date.now()}-${Math.floor(
+    Math.random() * 10000,
+  )}`
+}
+
+function getStatusNotification(
+  status: OrderStatus,
+) {
+  switch (status) {
+    case 'scheduled':
+      return {
+        title: 'Booking Scheduled',
+        message:
+          'Your service booking has been scheduled successfully.',
+      }
+
+    case 'picked':
+      return {
+        title: 'Service Picked Up',
+        message:
+          'Your service request has been picked up and processing will begin soon.',
+      }
+
+    case 'processing':
+      return {
+        title: 'Service In Progress',
+        message:
+          'Your service is currently being processed.',
+      }
+
+    case 'quality':
+      return {
+        title: 'Quality Check',
+        message:
+          'Your service has reached the quality-check stage.',
+      }
+
+    case 'out':
+      return {
+        title: 'Service On The Way',
+        message:
+          'Your completed service is on the way to you.',
+      }
+
+    case 'delivered':
+      return {
+        title: 'Service Completed',
+        message:
+          'Your service has been completed successfully.',
+      }
+
+    default:
+      return {
+        title: 'Booking Updated',
+        message:
+          'Your booking status has been updated.',
+      }
+  }
+}
+
+function createInitialDate(): string {
+  const date = new Date()
+
+  const year = date.getFullYear()
+
+  const month = String(
+    date.getMonth() + 1,
+  ).padStart(2, '0')
+
+  const day = String(
+    date.getDate(),
+  ).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+function getDefaultAddress(): Address {
+  return (
+    ADDRESSES[0] ?? {
+      id: 'default',
+      label: 'Home',
+      line: 'Your saved address',
+      icon: 'home',
     }
-  }, [])
+  )
+}
 
-  const back = useCallback(() => {
-    setHistory((h) =>
-      h.length > 1 ? h.slice(0, -1) : h,
+function readLocalStorage<T>(
+  key: string,
+  fallback: T,
+): T {
+  if (
+    typeof window ===
+    'undefined'
+  ) {
+    return fallback
+  }
+
+  try {
+    const value =
+      window.localStorage.getItem(key)
+
+    if (!value) {
+      return fallback
+    }
+
+    return JSON.parse(value) as T
+  } catch {
+    return fallback
+  }
+}
+
+function findCoupon(
+  code: string,
+): Coupon | null {
+  const clean = code
+    .trim()
+    .toUpperCase()
+
+  if (!clean) {
+    return null
+  }
+
+  const coupons =
+    COUPONS as unknown
+
+  if (Array.isArray(coupons)) {
+    const match =
+      coupons.find(
+        (item) =>
+          typeof item ===
+            'object' &&
+          item !== null &&
+          'code' in item &&
+          String(
+            (
+              item as {
+                code: string
+              }
+            ).code,
+          ).toUpperCase() ===
+            clean,
+      )
+
+    return (
+      (match as
+        | Coupon
+        | undefined) ?? null
+    )
+  }
+
+  if (
+    typeof coupons ===
+      'object' &&
+    coupons !== null
+  ) {
+    const record =
+      coupons as Record<
+        string,
+        Coupon
+      >
+
+    const match =
+      record[clean] ??
+      record[
+        clean.toLowerCase()
+      ]
+
+    if (match) {
+      return match
+    }
+
+    for (const key of Object.keys(
+      record,
+    )) {
+      if (
+        key.toUpperCase() ===
+        clean
+      ) {
+        return record[key]
+      }
+    }
+  }
+
+  return null
+}
+
+export function StoreProvider({
+  children,
+}: {
+  children: ReactNode
+}) {
+  const [view, setView] =
+    useState<View>({
+      name: 'home',
+    })
+
+  const [history, setHistory] =
+    useState<View[]>([])
+
+  const [cart, setCart] =
+    useState<CartLine[]>([])
+
+  const [care, setCareState] =
+    useState<CareSelection>({})
+
+  const [coupon, setCoupon] =
+    useState<Coupon | null>(null)
+
+  const [couponError, setCouponError] =
+    useState<string | null>(null)
+
+  const [
+    selectedProviders,
+    setSelectedProviders,
+  ] = useState<
+    Record<string, Partner>
+  >({})
+
+  const [address, setAddressState] =
+    useState<Address>(
+      getDefaultAddress(),
     )
 
-    if (typeof window !== 'undefined') {
-      window.scrollTo({
-        top: 0,
-        behavior: 'auto',
-      })
-    }
+  const [bookingType, setBookingType] =
+    useState<BookingType>(
+      'scheduled',
+    )
+
+  const [pickupDate, setPickupDate] =
+    useState<string>(
+      createInitialDate(),
+    )
+
+  const [pickupSlot, setPickupSlot] =
+    useState<string>(
+      '9:00 AM - 11:00 AM',
+    )
+
+  const [payment, setPayment] =
+    useState<string>('UPI')
+
+  const [location, setLocation] =
+    useState<string>('')
+
+  const [orders, setOrders] =
+    useState<Order[]>([])
+
+  const [
+    notifications,
+    setNotifications,
+  ] = useState<Notification[]>([])
+
+  const [toasts, setToasts] =
+    useState<Toast[]>([])
+
+  useEffect(() => {
+    const savedOrders =
+      readLocalStorage<Order[]>(
+        ORDERS_STORAGE_KEY,
+        [],
+      )
+
+    const savedNotifications =
+      readLocalStorage<
+        Notification[]
+      >(
+        NOTIFICATIONS_STORAGE_KEY,
+        [],
+      )
+
+    setOrders(savedOrders)
+    setNotifications(
+      savedNotifications,
+    )
   }, [])
 
-  const toast = useCallback(
-    (
-      message: string,
-      variant: Toast['variant'] = 'success',
-    ) => {
-      const id = Date.now() + Math.random()
+  useEffect(() => {
+    if (
+      typeof window ===
+      'undefined'
+    ) {
+      return
+    }
 
-      setToasts((t) => [
-        ...t,
-        {
-          id,
-          message,
-          variant,
-        },
+    try {
+      window.localStorage.setItem(
+        ORDERS_STORAGE_KEY,
+        JSON.stringify(orders),
+      )
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [orders])
+
+  useEffect(() => {
+    if (
+      typeof window ===
+      'undefined'
+    ) {
+      return
+    }
+
+    try {
+      window.localStorage.setItem(
+        NOTIFICATIONS_STORAGE_KEY,
+        JSON.stringify(
+          notifications,
+        ),
+      )
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [notifications])
+
+  const navigate = useCallback(
+    (nextView: View) => {
+      setHistory((current) => [
+        ...current,
+        view,
       ])
 
-      setTimeout(() => {
-        setToasts((t) =>
-          t.filter((x) => x.id !== id),
-        )
-      }, 2600)
+      setView(nextView)
     },
-    [],
+    [view],
   )
 
-  const dismissToast = useCallback((id: number) => {
-    setToasts((t) =>
-      t.filter((x) => x.id !== id),
-    )
+  const back = useCallback(() => {
+    setHistory((current) => {
+      if (current.length === 0) {
+        setView({
+          name: 'home',
+        })
+
+        return current
+      }
+
+      const next = [...current]
+
+      const previous =
+        next.pop()
+
+      if (previous) {
+        setView(previous)
+      }
+
+      return next
+    })
   }, [])
 
-  const setCare = useCallback(
-    (serviceId: string, level: CareLevel) => {
-      setCareState((c) => ({
-        ...c,
-        [serviceId]: level,
-      }))
+  const addItem = useCallback(
+    (
+      serviceId: string,
+      itemId: string,
+    ) => {
+      setCart((current) => {
+        const existing =
+          current.find(
+            (line) =>
+              line.serviceId ===
+                serviceId &&
+              line.itemId === itemId,
+          )
+
+        if (existing) {
+          return current.map(
+            (line) =>
+              line === existing
+                ? {
+                    ...line,
+                    qty:
+                      line.qty + 1,
+                  }
+                : line,
+          )
+        }
+
+        return [
+          ...current,
+          {
+            serviceId,
+            itemId,
+            qty: 1,
+          },
+        ]
+      })
     },
     [],
   )
 
-  const getQty = useCallback(
-    (serviceId: string, itemId: string) =>
-      cart.find(
-        (l) =>
-          l.serviceId === serviceId &&
-          l.itemId === itemId,
-      )?.qty ?? 0,
-    [cart],
+  const removeItem = useCallback(
+    (
+      serviceId: string,
+      itemId: string,
+    ) => {
+      setCart((current) =>
+        current.filter(
+          (line) =>
+            !(
+              line.serviceId ===
+                serviceId &&
+              line.itemId === itemId
+            ),
+        ),
+      )
+    },
+    [],
   )
 
   const setQty = useCallback(
@@ -225,159 +731,160 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       itemId: string,
       qty: number,
     ) => {
-      setCart((c) => {
-        const existing = c.find(
-          (l) =>
-            l.serviceId === serviceId &&
-            l.itemId === itemId,
+      if (qty <= 0) {
+        removeItem(
+          serviceId,
+          itemId,
         )
 
-        if (qty <= 0) {
-          return c.filter(
-            (l) =>
-              !(
-                l.serviceId === serviceId &&
-                l.itemId === itemId
-              ),
-          )
-        }
+        return
+      }
 
-        if (existing) {
-          return c.map((l) =>
-            l.serviceId === serviceId &&
-            l.itemId === itemId
-              ? { ...l, qty }
-              : l,
-          )
-        }
-
-        return [
-          ...c,
-          {
-            serviceId,
-            itemId,
-            qty,
-          },
-        ]
-      })
-
-      setCareState((cs) =>
-        cs[serviceId]
-          ? cs
-          : {
-              ...cs,
-              [serviceId]: 'standard',
-            },
+      setCart((current) =>
+        current.map((line) =>
+          line.serviceId ===
+              serviceId &&
+            line.itemId === itemId
+            ? {
+                ...line,
+                qty: Math.max(
+                  1,
+                  Math.floor(qty),
+                ),
+              }
+            : line,
+        ),
       )
+    },
+    [removeItem],
+  )
+
+  const getQty = useCallback(
+    (
+      serviceId: string,
+      itemId: string,
+    ) => {
+      const line = cart.find(
+        (item) =>
+          item.serviceId ===
+            serviceId &&
+          item.itemId === itemId,
+      )
+
+      return line?.qty ?? 0
+    },
+    [cart],
+  )
+
+  const setCare = useCallback(
+    (
+      serviceId: string,
+      level: CareLevel,
+    ) => {
+      setCareState((current) => ({
+        ...current,
+        [serviceId]: level,
+      }))
     },
     [],
-  )
-
-  const addItem = useCallback(
-    (serviceId: string, itemId: string) => {
-      const current =
-        cart.find(
-          (l) =>
-            l.serviceId === serviceId &&
-            l.itemId === itemId,
-        )?.qty ?? 0
-
-      setQty(
-        serviceId,
-        itemId,
-        current + 1,
-      )
-    },
-    [cart, setQty],
-  )
-
-  const removeItem = useCallback(
-    (serviceId: string, itemId: string) => {
-      const current =
-        cart.find(
-          (l) =>
-            l.serviceId === serviceId &&
-            l.itemId === itemId,
-        )?.qty ?? 0
-
-      setQty(
-        serviceId,
-        itemId,
-        current - 1,
-      )
-    },
-    [cart, setQty],
   )
 
   const clearCart = useCallback(() => {
     setCart([])
     setCareState({})
+    setSelectedProviders({})
     setCoupon(null)
     setCouponError(null)
-    setSelectedProvider(null)
   }, [])
 
-  const groups = useMemo<ServiceGroup[]>(() => {
-    const map = new Map<
-      string,
-      ServiceGroup
-    >()
+  const groups = useMemo<
+    ServiceGroup[]
+  >(() => {
+    const grouped =
+      new Map<
+        string,
+        ServiceGroup
+      >()
 
     for (const line of cart) {
-      const service = getService(
-        line.serviceId,
-      )
+      const service =
+        getService(line.serviceId)
 
       const item = getItem(
         line.serviceId,
         line.itemId,
       )
 
-      if (!service || !item) continue
+      if (!service || !item) {
+        continue
+      }
 
-      const level =
+      const careLevel =
         care[line.serviceId] ??
         'standard'
 
-      const unitPrice = linePrice(
-        item.price,
-        level,
-      )
+      const unitPrice =
+        linePrice(
+          item.price,
+          careLevel,
+        )
 
-      if (!map.has(line.serviceId)) {
-        map.set(line.serviceId, {
-          serviceId: line.serviceId,
-          serviceName: service.name,
-          care: level,
-          lines: [],
-          itemCount: 0,
-          amount: 0,
+      const existing =
+        grouped.get(
+          line.serviceId,
+        )
+
+      if (existing) {
+        existing.lines.push({
+          itemId: item.id,
+          name: item.name,
+          unit: item.unit,
+          qty: line.qty,
+          unitPrice,
         })
+
+        existing.itemCount +=
+          line.qty
+
+        existing.amount +=
+          unitPrice * line.qty
+      } else {
+        grouped.set(
+          line.serviceId,
+          {
+            serviceId:
+              service.id,
+            serviceName:
+              service.name,
+            care: careLevel,
+            lines: [
+              {
+                itemId: item.id,
+                name: item.name,
+                unit: item.unit,
+                qty: line.qty,
+                unitPrice,
+              },
+            ],
+            itemCount:
+              line.qty,
+            amount:
+              unitPrice * line.qty,
+          },
+        )
       }
-
-      const group =
-        map.get(line.serviceId)!
-
-      group.lines.push({
-        itemId: line.itemId,
-        name: item.name,
-        unit: item.unit,
-        qty: line.qty,
-        unitPrice,
-      })
-
-      group.itemCount += line.qty
-      group.amount +=
-        unitPrice * line.qty
     }
 
-    return Array.from(map.values())
+    return Array.from(
+      grouped.values(),
+    )
   }, [cart, care])
 
   const totalItems = useMemo(
     () =>
       cart.reduce(
-        (n, l) => n + l.qty,
+        (sum, line) =>
+          sum + line.qty,
         0,
       ),
     [cart],
@@ -386,110 +893,110 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const subtotal = useMemo(
     () =>
       groups.reduce(
-        (s, g) => s + g.amount,
+        (sum, group) =>
+          sum + group.amount,
         0,
       ),
     [groups],
   )
 
+  const delivery = useMemo(
+    () =>
+      subtotal > 0
+        ? DELIVERY_FEE
+        : 0,
+    [subtotal],
+  )
+
   const discount = useMemo(() => {
-    if (!coupon || subtotal === 0) {
+    if (!coupon || subtotal <= 0) {
       return 0
     }
 
-    if (coupon.type === 'freeDelivery') {
-      return 0
-    }
-
-    if (coupon.type === 'percent') {
-      const raw = Math.round(
-        (subtotal * coupon.value) / 100,
-      )
-
-      return coupon.cap
-        ? Math.min(raw, coupon.cap)
-        : raw
-    }
-
-    if (coupon.type === 'flat') {
-      if (coupon.serviceId) {
-        const group = groups.find(
-          (x) =>
-            x.serviceId ===
-            coupon.serviceId,
+    if (
+      coupon.type ===
+      'percent'
+    ) {
+      const calculated =
+        Math.round(
+          subtotal *
+            (coupon.value / 100),
         )
 
-        if (!group) return 0
-
+      if (
+        typeof coupon.cap ===
+        'number'
+      ) {
         return Math.min(
-          coupon.value,
-          group.amount,
+          calculated,
+          coupon.cap,
         )
       }
 
+      return calculated
+    }
+
+    if (
+      coupon.type === 'flat'
+    ) {
       return Math.min(
         coupon.value,
         subtotal,
       )
     }
 
-    return 0
-  }, [coupon, subtotal, groups])
-
-  const delivery = useMemo(() => {
-    if (subtotal === 0) {
-      return 0
-    }
-
     if (
-      coupon?.type ===
+      coupon.type ===
       'freeDelivery'
     ) {
-      return 0
+      return delivery
     }
 
-    return DELIVERY_FEE
-  }, [subtotal, coupon])
+    return 0
+  }, [
+    coupon,
+    subtotal,
+    delivery,
+  ])
 
-  const total = Math.max(
-    0,
-    subtotal +
-      delivery -
+  const total = useMemo(
+    () =>
+      Math.max(
+        0,
+        subtotal +
+          delivery -
+          discount,
+      ),
+    [
+      subtotal,
+      delivery,
       discount,
+    ],
   )
 
   const applyCoupon = useCallback(
     (code: string) => {
-      const clean =
-        code.trim().toUpperCase()
+      const clean = code
+        .trim()
+        .toUpperCase()
 
-      const found = COUPONS[clean]
-
-      if (!found) {
+      if (!clean) {
         setCouponError(
-          'This coupon code is not valid.',
+          'Please enter a coupon code.',
         )
-        setCoupon(null)
+
         return false
       }
 
-      if (
-        found.serviceId &&
-        !cart.some(
-          (l) =>
-            l.serviceId ===
-            found.serviceId,
-        )
-      ) {
-        const service = getService(
-          found.serviceId,
-        )
+      const found =
+        findCoupon(clean)
 
-        setCouponError(
-          `Add a ${service?.name} item to use ${clean}.`,
-        )
-
+      if (!found) {
         setCoupon(null)
+        setCouponError(
+          'Invalid or expired coupon code.',
+        )
+
         return false
       }
 
@@ -498,227 +1005,853 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       return true
     },
-    [cart],
+    [],
   )
 
-  const removeCoupon = useCallback(() => {
-    setCoupon(null)
-    setCouponError(null)
-  }, [])
+  const removeCoupon =
+    useCallback(() => {
+      setCoupon(null)
+      setCouponError(null)
+    }, [])
 
-  const getOrder = useCallback(
-    (id: string) =>
-      orders.find(
-        (o) => o.id === id,
-      ),
-    [orders],
-  )
-
-  const placeOrder = useCallback(
-    (): Order => {
-      const id =
-        'CLN' +
-        Math.floor(
-          10000 +
-            Math.random() *
-              89999,
-        )
-
-      const order: Order = {
-        id,
-        createdAt: Date.now(),
-        status: 'scheduled',
-
-        // Save selected provider
-        providerId:
-          selectedProvider?.id,
-
-        services: groups.map(
-          (g) => ({
-            serviceId:
-              g.serviceId,
-            serviceName:
-              g.serviceName,
-            itemCount:
-              g.itemCount,
-            amount: g.amount,
+  const setSelectedProvider =
+    useCallback(
+      (
+        serviceId: string,
+        provider: Partner,
+      ) => {
+        setSelectedProviders(
+          (current) => ({
+            ...current,
+            [serviceId]:
+              provider,
           }),
-        ),
+        )
+      },
+      [],
+    )
 
-        lines: [...cart],
-        care: { ...care },
-        address,
-        pickupDate,
-        pickupSlot:
-          pickupSlot ||
-          '6–8 PM',
-        payment:
-          payment || 'UPI',
-        subtotal,
-        delivery,
-        discount,
-        total,
-        couponCode:
-          coupon?.code,
+  const getSelectedProvider =
+    useCallback(
+      (serviceId: string) =>
+        selectedProviders[
+          serviceId
+        ] ?? null,
+      [selectedProviders],
+    )
+
+  const setAddress =
+    useCallback(
+      (nextAddress: Address) => {
+        setAddressState(
+          nextAddress,
+        )
+      },
+      [],
+    )
+
+  const addNotification =
+    useCallback(
+      (
+        notification: Omit<
+          Notification,
+          'id' | 'createdAt' | 'read'
+        >,
+      ) => {
+        const newNotification: Notification =
+          {
+            ...notification,
+            id: createNotificationId(),
+            createdAt: Date.now(),
+            read: false,
+          }
+
+        setNotifications(
+          (current) => [
+            newNotification,
+            ...current,
+          ],
+        )
+      },
+      [],
+    )
+
+  const markNotificationRead =
+    useCallback(
+      (notificationId: string) => {
+        setNotifications(
+          (current) =>
+            current.map(
+              (notification) =>
+                notification.id ===
+                notificationId
+                  ? {
+                      ...notification,
+                      read: true,
+                    }
+                  : notification,
+            ),
+        )
+      },
+      [],
+    )
+
+  const markAllNotificationsRead =
+    useCallback(() => {
+      setNotifications(
+        (current) =>
+          current.map(
+            (notification) => ({
+              ...notification,
+              read: true,
+            }),
+          ),
+      )
+    }, [])
+
+  const clearNotifications =
+    useCallback(() => {
+      setNotifications([])
+    }, [])
+
+  const removeNotification =
+    useCallback(
+      (notificationId: string) => {
+        setNotifications(
+          (current) =>
+            current.filter(
+              (notification) =>
+                notification.id !==
+                notificationId,
+            ),
+        )
+      },
+      [],
+    )
+
+  const unreadNotificationCount =
+    useMemo(
+      () =>
+        notifications.filter(
+          (notification) =>
+            !notification.read,
+        ).length,
+      [notifications],
+    )
+
+  const toast = useCallback(
+    (
+      message: string,
+      variant: Toast['variant'] =
+        'info',
+    ) => {
+      const id = Date.now()
+
+      setToasts((current) => [
+        ...current,
+        {
+          id,
+          message,
+          variant,
+        },
+      ])
+
+      window.setTimeout(() => {
+        setToasts((current) =>
+          current.filter(
+            (item) =>
+              item.id !== id,
+          ),
+        )
+      }, 3500)
+    },
+    [],
+  )
+
+  const dismissToast =
+    useCallback(
+      (id: number) => {
+        setToasts((current) =>
+          current.filter(
+            (item) =>
+              item.id !== id,
+          ),
+        )
+      },
+      [],
+    )
+
+  const placeOrder =
+    useCallback((): Order => {
+      const now = Date.now()
+
+      const orderId = `NXL-${now
+        .toString(36)
+        .toUpperCase()}`
+
+      /*
+       * Build a provider assignment for every service in the order.
+       * If the customer did not manually select a provider, automatically
+       * choose an available verified provider. This guarantees that every
+       * new booking has a providerId/providerIds that ProviderScreen can use.
+       */
+      const assignedProviders: Record<
+        string,
+        Partner
+      > = {}
+
+      for (const group of groups) {
+        const manuallySelected =
+          selectedProviders[group.serviceId]
+
+        if (manuallySelected) {
+          assignedProviders[group.serviceId] =
+            manuallySelected
+          continue
+        }
+
+        const serviceName =
+          group.serviceName.toLowerCase()
+
+        const matchingProvider =
+          PARTNERS.find((provider) => {
+            if (!provider.available || !provider.verified) {
+              return false
+            }
+
+            return provider.services
+              .toLowerCase()
+              .includes(serviceName)
+          })
+
+        const fallbackProvider =
+          PARTNERS.find(
+            (provider) =>
+              provider.available &&
+              provider.verified,
+          ) ?? PARTNERS[0]
+
+        const assigned =
+          matchingProvider ??
+          fallbackProvider
+
+        if (assigned) {
+          assignedProviders[group.serviceId] =
+            assigned
+        }
       }
 
-      setOrders((o) => [
-        order,
-        ...o,
+      const providerList =
+        Object.values(assignedProviders)
+
+      const firstProvider =
+        providerList[0]
+
+      /* Provider assignment is stored per service. */
+      const providerIds: Record<
+        string,
+        string
+      > = {}
+
+      const providerNames: Record<
+        string,
+        string
+      > = {}
+
+      for (const [
+        serviceId,
+        provider,
+      ] of Object.entries(
+        assignedProviders,
+      )) {
+        providerIds[serviceId] =
+          provider.id
+        providerNames[serviceId] =
+          provider.name
+      }
+
+      const paymentDetails =
+        createPaymentDetails(
+          payment,
+        )
+
+      const invoiceNumber =
+        createInvoiceNumber()
+
+      const serviceSummaries =
+        groups.map((group) => ({
+          serviceId:
+            group.serviceId,
+          serviceName:
+            group.serviceName,
+          itemCount:
+            group.itemCount,
+          amount:
+            group.amount,
+        }))
+
+      const priority =
+        bookingType === 'emergency'
+          ? 'emergency'
+          : bookingType ===
+              'on-demand'
+            ? 'priority'
+            : 'normal'
+
+      const order: Order = {
+        id: orderId,
+        createdAt: now,
+        status: 'scheduled',
+
+        providerId:
+          firstProvider?.id,
+
+        services:
+          serviceSummaries,
+
+        lines: [...cart],
+
+        care: {
+          ...care,
+        },
+
+        address: {
+          ...address,
+        },
+
+        pickupDate:
+          pickupDate ||
+          createInitialDate(),
+
+        pickupSlot:
+          pickupSlot ||
+          '9:00 AM - 11:00 AM',
+
+        payment,
+
+        paymentDetails,
+
+        paymentStatus:
+          paymentDetails.status,
+
+        invoiceId:
+          `INV-${now}`,
+
+        invoiceNumber,
+
+        transactionId:
+          paymentDetails.transactionId,
+
+        paidAt:
+          paymentDetails.paidAt,
+
+        subtotal,
+
+        delivery,
+
+        discount,
+
+        total,
+
+        couponCode:
+          coupon?.code,
+
+        bookingType,
+
+        priority,
+
+        notes:
+          location ||
+          undefined,
+
+        latitude:
+          undefined,
+
+        longitude:
+          undefined,
+      }
+
+      const extendedOrder =
+        order as Order & {
+          providerIds?: Record<string, string>
+          providerNames?: Record<string, string>
+          providerName?: string
+        }
+
+      extendedOrder.providerIds =
+        providerIds
+
+      extendedOrder.providerNames =
+        providerNames
+
+      extendedOrder.providerName =
+        firstProvider?.name
+
+      setOrders((current) => [
+        extendedOrder,
+        ...current,
       ])
+
+      addNotification({
+        title:
+          bookingType ===
+          'emergency'
+            ? 'Emergency Booking Created'
+            : 'Booking Confirmed',
+        message:
+          bookingType ===
+          'emergency'
+            ? 'Your emergency service request has been created and priority dispatch has started.'
+            : 'Your service booking has been confirmed successfully.',
+        type:
+          bookingType ===
+          'emergency'
+            ? 'emergency'
+            : 'booking',
+        audience: 'customer',
+        orderId,
+        providerId:
+          firstProvider?.id,
+      })
+
+      if (firstProvider) {
+        addNotification({
+          title:
+            'New Service Request',
+          message: `You have received a new ${bookingType} service request.`,
+          type: 'booking',
+          audience: 'provider',
+          orderId,
+          providerId:
+            firstProvider.id,
+        })
+      }
+
+      addNotification({
+        title:
+          'New Booking Received',
+        message: `New booking ${orderId} has been created and is ready for processing.`,
+        type: 'booking',
+        audience: 'admin',
+        orderId,
+        providerId:
+          firstProvider?.id,
+      })
+
+      if (
+        paymentDetails.status ===
+        'paid'
+      ) {
+        addNotification({
+          title:
+            'Payment Successful',
+          message: `Payment for booking ${orderId} has been received successfully.`,
+          type: 'payment',
+          audience: 'customer',
+          orderId,
+        })
+      } else {
+        addNotification({
+          title:
+            'Payment Pending',
+          message:
+            'Cash on Delivery has been selected. Payment will remain pending until collection.',
+          type: 'payment',
+          audience: 'customer',
+          orderId,
+        })
+      }
+
+      addNotification({
+        title:
+          'Invoice Generated',
+        message: `Invoice ${invoiceNumber} has been generated for your booking.`,
+        type: 'invoice',
+        audience: 'customer',
+        orderId,
+      })
 
       setCart([])
       setCareState({})
       setCoupon(null)
       setCouponError(null)
-      setPickupSlot('')
-      setPayment('')
+      setSelectedProviders({})
 
-      return order
-    },
-    [
+      toast(
+        'Booking placed successfully!',
+        'success',
+      )
+
+      return extendedOrder
+    }, [
+      selectedProviders,
+      payment,
       groups,
       cart,
       care,
       address,
       pickupDate,
       pickupSlot,
-      payment,
       subtotal,
       delivery,
       discount,
       total,
       coupon,
-      selectedProvider,
-    ],
-  )
+      bookingType,
+      location,
+      addNotification,
+      toast,
+    ])
 
-  const advanceStatus = useCallback(
-    (
-      orderId: string,
-      status: OrderStatus,
-    ) => {
-      setOrders((o) =>
-        o.map((x) =>
-          x.id === orderId
-            ? {
-                ...x,
-                status,
-              }
-            : x,
-        ),
-      )
-    },
-    [],
-  )
+  const advanceStatus =
+    useCallback(
+      (
+        orderId: string,
+        status: OrderStatus,
+      ) => {
+        setOrders((current) =>
+          current.map((order) => {
+            if (
+              order.id !== orderId
+            ) {
+              return order
+            }
 
-  const reorder = useCallback(
-    (orderId: string) => {
-      const order =
-        orders.find(
-          (o) => o.id === orderId,
+            return {
+              ...order,
+              status,
+            }
+          }),
         )
 
-      if (!order) return
+        const order =
+          orders.find(
+            (item) =>
+              item.id === orderId,
+          )
 
-      setCart((c) => {
-        const next = [...c]
+        if (!order) {
+          return
+        }
 
-        for (const line of order.lines) {
-          const existing =
-            next.find(
-              (l) =>
-                l.serviceId ===
-                  line.serviceId &&
-                l.itemId ===
-                  line.itemId,
+        const statusInfo =
+          getStatusNotification(
+            status,
+          )
+
+        addNotification({
+          title:
+            statusInfo.title,
+          message:
+            statusInfo.message,
+          type: 'status',
+          audience: 'customer',
+          orderId,
+          providerId:
+            order.providerId,
+        })
+
+        if (order.providerId) {
+          addNotification({
+            title:
+              'Booking Status Updated',
+            message: `Booking ${orderId} is now marked as ${status}.`,
+            type: 'status',
+            audience: 'provider',
+            orderId,
+            providerId:
+              order.providerId,
+          })
+        }
+
+        addNotification({
+          title:
+            'Order Status Updated',
+          message: `Order ${orderId} has been updated to ${status}.`,
+          type: 'status',
+          audience: 'admin',
+          orderId,
+          providerId:
+            order.providerId,
+        })
+
+        toast(
+          statusInfo.title,
+          'success',
+        )
+      },
+      [
+        orders,
+        addNotification,
+        toast,
+      ],
+    )
+
+  const reorder =
+    useCallback(
+      (orderId: string) => {
+        const order =
+          orders.find(
+            (item) =>
+              item.id === orderId,
+          )
+
+        if (!order) {
+          toast(
+            'Order not found.',
+            'error',
+          )
+
+          return
+        }
+
+        setCart([
+          ...order.lines,
+        ])
+
+        setCareState({
+          ...order.care,
+        })
+
+        const extendedOrder =
+          order as Order & {
+            providerIds?: string[]
+          }
+
+        const restoredProviders:
+          Record<string, Partner> =
+          {}
+
+        if (
+          extendedOrder.providerIds
+        ) {
+          for (
+            const serviceId of Object.keys(
+              order.care,
+            )
+          ) {
+            const providerId =
+              extendedOrder
+                .providerIds[0]
+
+            if (!providerId) {
+              continue
+            }
+
+            const provider =
+              PARTNERS.find(
+                (item) =>
+                  item.id ===
+                  providerId,
+              )
+
+            if (provider) {
+              restoredProviders[
+                serviceId
+              ] = provider
+            }
+          }
+        } else if (
+          order.providerId
+        ) {
+          const provider =
+            PARTNERS.find(
+              (item) =>
+                item.id ===
+                order.providerId,
             )
 
-          if (existing) {
-            existing.qty += line.qty
-          } else {
-            next.push({
-              ...line,
-            })
+          if (provider) {
+            for (
+              const serviceId of Object.keys(
+                order.care,
+              )
+            ) {
+              restoredProviders[
+                serviceId
+              ] = provider
+            }
           }
         }
 
-        return next
-      })
-
-      setCareState((cs) => ({
-        ...order.care,
-        ...cs,
-      }))
-
-      // Restore provider on reorder
-      const provider =
-        PARTNERS.find(
-          (p) =>
-            p.id ===
-            order.providerId,
+        setSelectedProviders(
+          restoredProviders,
         )
 
-      if (provider) {
-        setSelectedProvider(
-          provider,
+        setAddressState({
+          ...order.address,
+        })
+
+        setBookingType(
+          order.bookingType ??
+            'scheduled',
         )
-      }
-    },
+
+        setPickupDate(
+          order.pickupDate ||
+            createInitialDate(),
+        )
+
+        setPickupSlot(
+          order.pickupSlot ||
+            '9:00 AM - 11:00 AM',
+        )
+
+        setPayment(
+          order.payment ||
+            'UPI',
+        )
+
+        setCoupon(null)
+        setCouponError(null)
+
+        navigate({
+          name: 'bag',
+        })
+
+        toast(
+          'Previous order added to your bag.',
+          'success',
+        )
+      },
+      [
+        orders,
+        navigate,
+        toast,
+      ],
+    )
+
+  const getOrder = useCallback(
+    (id: string) =>
+      orders.find(
+        (order) =>
+          order.id === id,
+      ),
     [orders],
   )
 
-  const value: StoreValue = {
-    view,
-    navigate,
-    back,
+  const value = useMemo<StoreValue>(
+    () => ({
+      view,
+      navigate,
+      back,
 
-    cart,
-    care,
-    addItem,
-    removeItem,
-    setQty,
-    getQty,
-    setCare,
-    clearCart,
-    groups,
-    totalItems,
+      cart,
+      care,
 
-    subtotal,
-    delivery,
-    discount,
-    total,
+      addItem,
+      removeItem,
+      setQty,
+      getQty,
+      setCare,
+      clearCart,
 
-    coupon,
-    couponError,
-    applyCoupon,
-    removeCoupon,
+      groups,
+      totalItems,
 
-    selectedProvider,
-    setSelectedProvider,
+      subtotal,
+      delivery,
+      discount,
+      total,
 
-    address,
-    setAddress,
-    pickupDate,
-    setPickupDate,
-    pickupSlot,
-    setPickupSlot,
-    payment,
-    setPayment,
+      coupon,
+      couponError,
 
-    location,
-    setLocation,
+      applyCoupon,
+      removeCoupon,
 
-    orders,
-    placeOrder,
-    advanceStatus,
-    reorder,
-    getOrder,
+      selectedProviders,
 
-    toasts,
-    toast,
-    dismissToast,
-  }
+      setSelectedProvider,
+      getSelectedProvider,
+
+      address,
+      setAddress,
+
+      bookingType,
+      setBookingType,
+
+      pickupDate,
+      setPickupDate,
+
+      pickupSlot,
+      setPickupSlot,
+
+      payment,
+      setPayment,
+
+      location,
+      setLocation,
+
+      orders,
+
+      placeOrder,
+      advanceStatus,
+      reorder,
+      getOrder,
+
+      notifications,
+      unreadNotificationCount,
+
+      addNotification,
+      markNotificationRead,
+      markAllNotificationsRead,
+      clearNotifications,
+      removeNotification,
+
+      toasts,
+      toast,
+      dismissToast,
+    }),
+    [
+      view,
+      navigate,
+      back,
+      cart,
+      care,
+      addItem,
+      removeItem,
+      setQty,
+      getQty,
+      setCare,
+      clearCart,
+      groups,
+      totalItems,
+      subtotal,
+      delivery,
+      discount,
+      total,
+      coupon,
+      couponError,
+      applyCoupon,
+      removeCoupon,
+      selectedProviders,
+      setSelectedProvider,
+      getSelectedProvider,
+      address,
+      setAddress,
+      bookingType,
+      pickupDate,
+      pickupSlot,
+      payment,
+      location,
+      orders,
+      placeOrder,
+      advanceStatus,
+      reorder,
+      getOrder,
+      notifications,
+      unreadNotificationCount,
+      addNotification,
+      markNotificationRead,
+      markAllNotificationsRead,
+      clearNotifications,
+      removeNotification,
+      toasts,
+      toast,
+      dismissToast,
+    ],
+  )
 
   return (
     <StoreContext.Provider
@@ -730,16 +1863,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 }
 
 export function useStore() {
-  const ctx =
+  const context =
     useContext(StoreContext)
 
-  if (!ctx) {
+  if (!context) {
     throw new Error(
       'useStore must be used within StoreProvider',
     )
   }
 
-  return ctx
+  return context
 }
-
-export { ORDER_STATUS_STEPS }

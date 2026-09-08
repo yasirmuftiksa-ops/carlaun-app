@@ -9,19 +9,31 @@ import { Partners } from '@/components/home/partners'
 import { ServicesSection } from '@/components/home/services-section'
 import { TrustEco } from '@/components/home/trust-eco'
 import { Footer } from '@/components/footer'
+import { AIAssistant } from '@/components/ai-assistant'
 
 export function HomeScreen() {
   return (
     <>
       <Hero />
+
       <ServicesSection />
+
       <Differentiator />
+
       <Partners />
+
       <Offers />
+
       <HowItWorks />
+
       <TrustEco />
+
       <FutureFeature />
+
       <Footer />
+
+      {/* NeXa Link AI Assistant */}
+      <AIAssistant />
     </>
   )
 }

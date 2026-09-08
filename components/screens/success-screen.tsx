@@ -54,7 +54,7 @@ export function SuccessScreen({ orderId }: { orderId: string }) {
           transition={{ delay: 0.42 }}
           className="mt-1.5 text-pretty text-sm text-muted-foreground"
         >
-          Your CARLAUN partner will collect everything in a single trip.
+          Your NeXa Link partner will collect everything in a single trip.
         </motion.p>
 
         {/* Order card */}

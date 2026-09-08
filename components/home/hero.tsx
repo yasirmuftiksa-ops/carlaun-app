@@ -4,12 +4,16 @@ import { motion } from 'framer-motion'
 import {
   ArrowRight,
   Bike,
-  Footprints,
-  Shirt,
-  ShoppingBag,
+  Brush,
+  Droplets,
+  Hammer,
+  HeartHandshake,
+  Home,
+  Paintbrush,
   Sparkles,
   Star,
-  WashingMachine,
+  Wrench,
+  Zap,
 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 
@@ -28,7 +32,12 @@ function Float({
     <motion.div
       className={className}
       animate={{ y: [0, -amount, 0] }}
-      transition={{ duration: 4 + delay, repeat: Infinity, ease: 'easeInOut', delay }}
+      transition={{
+        duration: 4 + delay,
+        repeat: Infinity,
+        ease: 'easeInOut',
+        delay,
+      }}
     >
       {children}
     </motion.div>
@@ -55,7 +64,7 @@ export function Hero() {
             className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-sm font-medium text-primary"
           >
             <Sparkles className="size-4" />
-            One pickup. Multiple services.
+            One platform. Every service.
           </motion.span>
 
           <motion.h1
@@ -64,9 +73,9 @@ export function Hero() {
             transition={{ delay: 0.05 }}
             className="mt-5 text-pretty font-display text-4xl font-extrabold leading-[1.05] tracking-tight text-foreground sm:text-5xl lg:text-6xl"
           >
-            One Platform.
+            Trusted Services.
             <br />
-            <span className="text-primary">Every Garment</span> Care Need.
+            <span className="text-primary">One Cooperative</span> Platform.
           </motion.h1>
 
           <motion.p
@@ -75,8 +84,9 @@ export function Hero() {
             transition={{ delay: 0.12 }}
             className="mx-auto mt-5 max-w-xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg lg:mx-0"
           >
-            From laundry and ironing to dry cleaning, shoe care and saree pleating — book
-            everything from your doorstep.
+            Book laundry, cleaning, plumbing, electrical, carpentry, painting,
+            gardening, caregiving, driver services and more — all from one
+            trusted platform.
           </motion.p>
 
           <motion.div
@@ -86,15 +96,22 @@ export function Hero() {
             className="mt-8 flex flex-col items-center gap-3 sm:flex-row lg:justify-start"
           >
             <button
-              onClick={() => navigate({ name: 'bag' })}
+              onClick={() => {
+                document
+                  .getElementById('services')
+                  ?.scrollIntoView({ behavior: 'smooth' })
+              }}
               className="group inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-3.5 text-base font-semibold text-primary-foreground shadow-[var(--shadow-soft)] transition-all hover:brightness-110 active:scale-95 sm:w-auto"
             >
-              Book a Pickup
+              Book a Service
               <ArrowRight className="size-5 transition-transform group-hover:translate-x-1" />
             </button>
+
             <button
               onClick={() =>
-                document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })
+                document
+                  .getElementById('services')
+                  ?.scrollIntoView({ behavior: 'smooth' })
               }
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card px-6 py-3.5 text-base font-semibold text-foreground transition-colors hover:border-primary/40 sm:w-auto"
             >
@@ -106,72 +123,203 @@ export function Hero() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
-            className="mt-8 flex items-center justify-center gap-6 lg:justify-start"
+            className="mt-8 flex flex-wrap items-center justify-center gap-4 sm:gap-6 lg:justify-start"
           >
             <div className="flex items-center gap-1.5">
               <Star className="size-4 fill-primary text-primary" />
               <span className="text-sm font-semibold text-foreground">4.8</span>
-              <span className="text-sm text-muted-foreground">demo rating</span>
+              <span className="text-sm text-muted-foreground">
+                average rating
+              </span>
             </div>
-            <div className="h-4 w-px bg-border" />
+
+            <div className="hidden h-4 w-px bg-border sm:block" />
+
             <span className="text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">6</span> care services
+              <span className="font-semibold text-foreground">14+</span>{' '}
+              services
             </span>
-            <div className="h-4 w-px bg-border" />
-            <span className="text-sm text-muted-foreground">Doorstep pickup</span>
+
+            <div className="hidden h-4 w-px bg-border sm:block" />
+
+            <span className="text-sm text-muted-foreground">
+              GEO provider matching
+            </span>
           </motion.div>
         </div>
 
         {/* Visual */}
-        <div className="relative mx-auto h-[380px] w-full max-w-md sm:h-[440px]">
+        <div className="relative mx-auto h-[420px] w-full max-w-md sm:h-[470px]">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6 }}
             className="absolute inset-0"
           >
-            {/* central basket card */}
-            <Float amount={12} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            {/* Central NeXa Link card */}
+            <Float
+              amount={12}
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+            >
               <div className="flex size-44 flex-col items-center justify-center gap-2 rounded-[2rem] bg-primary text-primary-foreground shadow-[var(--shadow-lift)] sm:size-52">
-                <WashingMachine className="size-16 sm:size-20" strokeWidth={1.5} />
-                <span className="font-display text-sm font-bold">CARLAUN Care</span>
+                <Home
+                  className="size-16 sm:size-20"
+                  strokeWidth={1.5}
+                />
+
+                <span className="font-display text-sm font-bold">
+                  NeXa Link Services
+                </span>
+
+                <span className="text-xs text-primary-foreground/80">
+                  Cooperative Network
+                </span>
               </div>
             </Float>
 
-            <Float delay={0.4} className="absolute left-2 top-6">
-              <Tile icon={<Shirt className="size-7 text-primary" />} label="Laundry" sub="₹49" />
-            </Float>
-            <Float delay={0.9} amount={14} className="absolute right-1 top-2">
-              <Tile icon={<Sparkles className="size-7 text-primary" />} label="Ironing" sub="₹10" />
-            </Float>
-            <Float delay={0.6} amount={9} className="absolute bottom-16 left-0">
-              <Tile icon={<Footprints className="size-7 text-primary" />} label="Shoe Care" sub="₹149" />
-            </Float>
-            <Float delay={1.1} className="absolute bottom-6 right-4">
-              <Tile icon={<ShoppingBag className="size-7 text-primary" />} label="One Bag" sub="16 items" />
+            {/* Top-left */}
+            <Float
+              delay={0.4}
+              className="absolute left-0 top-4"
+            >
+              <Tile
+                icon={<Droplets className="size-7 text-primary" />}
+                label="Laundry"
+                sub="₹49"
+              />
             </Float>
 
-            {/* scooter chip */}
-            <Float delay={0.7} amount={8} className="absolute bottom-0 left-1/2 -translate-x-1/2">
+            {/* Top-right */}
+            <Float
+              delay={0.9}
+              amount={14}
+              className="absolute right-0 top-0"
+            >
+              <Tile
+                icon={<Sparkles className="size-7 text-primary" />}
+                label="Cleaning"
+                sub="₹299"
+              />
+            </Float>
+
+            {/* Middle-left */}
+            <Float
+              delay={0.6}
+              amount={9}
+              className="absolute -left-1 top-[42%]"
+            >
+              <Tile
+                icon={<Wrench className="size-7 text-primary" />}
+                label="Plumbing"
+                sub="₹199"
+              />
+            </Float>
+
+            {/* Middle-right */}
+            <Float
+              delay={1.2}
+              amount={11}
+              className="absolute -right-1 top-[40%]"
+            >
+              <Tile
+                icon={<Zap className="size-7 text-primary" />}
+                label="Electrical"
+                sub="₹149"
+              />
+            </Float>
+
+            {/* Bottom-left */}
+            <Float
+              delay={0.8}
+              amount={10}
+              className="absolute bottom-12 left-0"
+            >
+              <Tile
+                icon={<Hammer className="size-7 text-primary" />}
+                label="Carpentry"
+                sub="₹249"
+              />
+            </Float>
+
+            {/* Bottom-right */}
+            <Float
+              delay={1.1}
+              className="absolute bottom-8 right-0"
+            >
+              <Tile
+                icon={<Paintbrush className="size-7 text-primary" />}
+                label="Painting"
+                sub="₹499"
+              />
+            </Float>
+
+            {/* Small service chips */}
+            <Float
+              delay={1.3}
+              amount={7}
+              className="absolute bottom-0 left-1/2 -translate-x-1/2"
+            >
+              <div className="flex items-center gap-2 rounded-full bg-card px-4 py-2.5 shadow-[var(--shadow-card)]">
+                <span className="flex size-8 items-center justify-center rounded-full bg-success/15 text-success">
+                  <HeartHandshake className="size-5" />
+                </span>
+
+                <span className="text-sm font-semibold text-foreground">
+                  Verified cooperative providers
+                </span>
+              </div>
+            </Float>
+
+            {/* GEO matching chip */}
+            <Float
+              delay={0.5}
+              amount={6}
+              className="absolute left-1/2 top-3 -translate-x-1/2"
+            >
+              <div className="flex items-center gap-2 rounded-full border border-primary/10 bg-card/95 px-3 py-2 shadow-[var(--shadow-card)] backdrop-blur">
+                <span className="size-2 rounded-full bg-success" />
+                <span className="text-xs font-semibold text-foreground">
+                  Smart GEO Match
+                </span>
+              </div>
+            </Float>
+
+            {/* Delivery / on-demand chip */}
+            <Float
+              delay={0.7}
+              amount={8}
+              className="absolute bottom-[38%] left-1/2 -translate-x-1/2"
+            >
               <div className="flex items-center gap-2 rounded-full bg-card px-4 py-2.5 shadow-[var(--shadow-card)]">
                 <span className="flex size-8 items-center justify-center rounded-full bg-success/15 text-success">
                   <Bike className="size-5" />
                 </span>
-                <span className="text-sm font-semibold text-foreground">Out for delivery</span>
+
+                <span className="text-sm font-semibold text-foreground">
+                  On-demand service
+                </span>
               </div>
             </Float>
 
-            {/* bubbles */}
+            {/* Decorative bubbles */}
             {[
               { c: 'left-6 top-1/2 size-3', d: 0 },
               { c: 'right-10 top-1/3 size-2', d: 0.5 },
               { c: 'right-16 bottom-1/3 size-4', d: 1 },
+              { c: 'left-16 bottom-1/4 size-2', d: 1.4 },
             ].map((b, i) => (
               <motion.span
                 key={i}
                 className={`absolute rounded-full bg-primary/25 ${b.c}`}
-                animate={{ y: [0, -18, 0], opacity: [0.3, 0.8, 0.3] }}
-                transition={{ duration: 3, repeat: Infinity, delay: b.d }}
+                animate={{
+                  y: [0, -18, 0],
+                  opacity: [0.3, 0.8, 0.3],
+                }}
+                transition={{
+                  duration: 3,
+                  repeat: Infinity,
+                  delay: b.d,
+                }}
               />
             ))}
           </motion.div>
@@ -181,12 +329,28 @@ export function Hero() {
   )
 }
 
-function Tile({ icon, label, sub }: { icon: React.ReactNode; label: string; sub: string }) {
+function Tile({
+  icon,
+  label,
+  sub,
+}: {
+  icon: React.ReactNode
+  label: string
+  sub: string
+}) {
   return (
     <div className="flex w-28 flex-col gap-1.5 rounded-2xl border border-border bg-card p-3 shadow-[var(--shadow-card)]">
-      <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10">{icon}</span>
-      <span className="text-sm font-bold text-foreground">{label}</span>
-      <span className="text-xs font-medium text-muted-foreground">From {sub}</span>
+      <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
+        {icon}
+      </span>
+
+      <span className="text-sm font-bold text-foreground">
+        {label}
+      </span>
+
+      <span className="text-xs font-medium text-muted-foreground">
+        From {sub}
+      </span>
     </div>
   )
 }

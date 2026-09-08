@@ -14,7 +14,7 @@ export function Logo({ compact = false }: { compact?: boolean }) {
       </span>
       {!compact && (
         <span className="font-display text-xl font-extrabold tracking-tight text-foreground">
-          CARLAUN
+          NeXa Link
         </span>
       )}
     </span>
