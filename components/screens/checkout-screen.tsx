@@ -856,6 +856,10 @@ export function CheckoutScreen() {
               },
             )}
           </div>
+
+          <p className="mt-3 rounded-xl border border-primary/10 bg-primary/[0.04] px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+            Demo payment only. Card and UPI credentials are never collected.
+          </p>
         </Section>
 
         {/* ===================================================== */}

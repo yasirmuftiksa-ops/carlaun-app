@@ -185,6 +185,37 @@ export type OrderStatus =
   | 'out'
   | 'delivered'
 
+export type DeliveryJourneyStage =
+  | 'DRIVER_ASSIGNED'
+  | 'DRIVER_EN_ROUTE'
+  | 'NEAR_CUSTOMER'
+  | 'ARRIVED_CUSTOMER'
+  | 'PICKUP_COMPLETED'
+  | 'EN_ROUTE_TO_SHOP'
+  | 'SHOP_REACHED'
+  | 'SERVICE_STARTED'
+  | 'SERVICE_COMPLETED'
+  | 'RETURNING_TO_CUSTOMER'
+  | 'NEAR_CUSTOMER_RETURN'
+  | 'DELIVERED'
+
+export interface JourneyLocation {
+  latitude: number
+  longitude: number
+}
+
+export interface DeliveryJourney {
+  orderId: string
+  stage: DeliveryJourneyStage
+  driverLocation: JourneyLocation
+  customerLocation: JourneyLocation
+  shopLocation: JourneyLocation
+  updatedAt: number
+  etaMinutes: number
+  simulation: true
+  notifiedStages: DeliveryJourneyStage[]
+}
+
 export interface OrderServiceSummary {
   serviceId: string
   serviceName: string
@@ -194,9 +225,17 @@ export interface OrderServiceSummary {
 
 export type PaymentStatus =
   | 'pending'
+  | 'processing'
   | 'paid'
   | 'failed'
   | 'refunded'
+
+export type TransactionStatus =
+  | 'pending'
+  | 'processing'
+  | 'paid'
+  | 'failed'
+  | 'cash-pending'
 
 export type PaymentMethod =
   | 'UPI'
@@ -209,6 +248,22 @@ export interface PaymentDetails {
   status: PaymentStatus
   transactionId?: string
   paidAt?: number
+}
+
+export interface PaymentTransaction {
+  id: string
+  orderId: string
+  customerName?: string
+  providerId?: string
+  providerName?: string
+  amount: number
+  paymentMethod: PaymentMethod
+  status: TransactionStatus
+  createdAt: number
+  paidAt?: number
+  workerEarnings: number
+  cooperativeContribution: number
+  welfareContribution: number
 }
 
 export interface Invoice {
@@ -232,6 +287,11 @@ export interface Order {
   createdAt: number
   status: OrderStatus
   providerId?: string
+  /** Human-readable assignment data retained with an order for customer views. */
+  providerName?: string
+  /** Provider assignment by service, used for multi-service bookings. */
+  providerIds?: Record<string, string>
+  providerNames?: Record<string, string>
   workerId?: string
   cooperativeId?: string
   bookingType?: BookingType
@@ -280,6 +340,27 @@ export interface WorkerJob {
   earnings: number
 }
 
+/** Persisted, explainable cooperative payout for one completed booking. */
+export interface CooperativeEarning {
+  id: string
+  orderId: string
+  providerId: string
+  providerName: string
+  serviceName: string
+  customerPaid: number
+  basePay: number
+  travelCompensation: number
+  skillBonus: number
+  reliabilityBonus: number
+  emergencyBonus: number
+  cooperativeContribution: number
+  welfareContribution: number
+  grossEarnings: number
+  netEarnings: number
+  fairPayScore: number
+  createdAt: number
+}
+
 export interface Review {
   id: string
   orderId: string
@@ -304,6 +385,32 @@ export interface Complaint {
   status: ComplaintStatus
   photoUrl?: string
   createdAt: number
+}
+
+export type EmergencyIncidentStatus =
+  | 'active'
+  | 'dispatching'
+  | 'assistance-sent'
+  | 'replacement-required'
+  | 'resolved'
+  | 'cancelled'
+
+export interface EmergencyIncident {
+  id: string
+  orderId: string
+  providerId: string
+  providerName: string
+  customerName?: string
+  serviceName: string
+  location: string
+  timestamp: number
+  status: EmergencyIncidentStatus
+  priority: 'high' | 'critical'
+  description: string
+  replacementRequired: boolean
+  replacementProviderId?: string
+  replacementProviderName?: string
+  resolvedAt?: number
 }
 
 /* =========================

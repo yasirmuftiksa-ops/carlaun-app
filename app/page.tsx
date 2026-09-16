@@ -273,9 +273,9 @@ export default function Page() {
   |--------------------------------------------------------------------------
   */
 
-  if (session.role === 'admin') {
-    return (
-      <StoreProvider>
+  return (
+    <StoreProvider>
+      {session.role === 'admin' ? (
         <div className="relative min-h-dvh">
           <AdminScreen />
 
@@ -284,22 +284,12 @@ export default function Page() {
             onLogout={handleLogout}
           />
         </div>
-      </StoreProvider>
-    )
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | NORMAL USER
-  |--------------------------------------------------------------------------
-  */
-
-  return (
-    <StoreProvider>
-      <AuthenticatedUserApp
-        session={session}
-        onLogout={handleLogout}
-      />
+      ) : (
+        <AuthenticatedUserApp
+          session={session}
+          onLogout={handleLogout}
+        />
+      )}
     </StoreProvider>
   )
 }

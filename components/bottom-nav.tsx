@@ -9,6 +9,7 @@ import {
   User,
 } from 'lucide-react'
 import { useStore } from '@/lib/store'
+import { useLanguage } from '@/components/language-provider'
 
 const ITEMS: {
   name: 'home' | 'orders' | 'profile'
@@ -23,6 +24,14 @@ const ITEMS: {
 
 export function BottomNav() {
   const { view, navigate } = useStore()
+  const { t } = useLanguage()
+
+  const labels = [
+    t.common.home,
+    t.common.orders,
+    t.common.track,
+    t.common.profile,
+  ]
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border/60 bg-background/85 shadow-[0_-8px_30px_-18px_rgba(0,0,0,0.25)] backdrop-blur-xl lg:hidden">
@@ -66,7 +75,7 @@ export function BottomNav() {
                     : 'text-muted-foreground group-hover:text-foreground'
                 }`}
               >
-                {item.label}
+                {labels[i] ?? item.label}
               </span>
 
               {active && (
@@ -92,7 +101,7 @@ export function BottomNav() {
             })
           }
           className="group relative flex flex-col items-center gap-1"
-          aria-label="Book a service"
+            aria-label={t.home.bookService}
         >
           <span className="-mt-7 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-lift)] ring-4 ring-background transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[var(--shadow-glow)] active:scale-90">
             <Plus
@@ -102,7 +111,7 @@ export function BottomNav() {
           </span>
 
           <span className="text-[11px] font-bold text-primary">
-            Book
+            {t.common.book}
           </span>
         </button>
 
@@ -140,7 +149,7 @@ export function BottomNav() {
                 : 'text-muted-foreground group-hover:text-foreground'
             }`}
           >
-            Track
+            {t.common.track}
           </span>
         </button>
 
@@ -178,7 +187,7 @@ export function BottomNav() {
                 : 'text-muted-foreground group-hover:text-foreground'
             }`}
           >
-            Profile
+            {t.common.profile}
           </span>
         </button>
       </div>

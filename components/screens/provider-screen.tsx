@@ -44,7 +44,10 @@ import {
   useStore,
 } from '@/lib/store'
 import type { OrderStatus, Partner } from '@/lib/types'
+import type { DeliveryJourney } from '@/lib/types'
 import { ScreenHeader } from '@/components/screen-header'
+import { useLanguage } from '@/components/language-provider'
+import { Modal } from '@/components/ui/modal'
 
 type ExtendedOrder = {
   providerId?: string
@@ -343,6 +346,18 @@ function getInitialWorkflow(
   }
 }
 
+function getWorkflowFromJourney(
+  journey: DeliveryJourney | undefined,
+  orderStatus: OrderStatus,
+): ProviderWorkflowStatus {
+  if (!journey) return getInitialWorkflow(orderStatus)
+  if (journey.stage === 'DRIVER_EN_ROUTE' || journey.stage === 'NEAR_CUSTOMER') return 'on-the-way'
+  if (journey.stage === 'ARRIVED_CUSTOMER' || journey.stage === 'PICKUP_COMPLETED') return 'arrived'
+  if (journey.stage === 'SERVICE_STARTED' || journey.stage === 'SERVICE_COMPLETED') return 'work-started'
+  if (journey.stage === 'DELIVERED') return 'completed'
+  return 'assigned'
+}
+
 /*
  * Map every provider journey step to the
  * corresponding customer/system order status.
@@ -465,8 +480,15 @@ export function ProviderScreen() {
   const {
     orders,
     advanceStatus,
+    getDeliveryJourney,
+    advanceDeliveryJourney,
+    cooperativeEarnings,
+    creditCooperativeEarning,
     toast,
+    emergencyIncidents,
+    createEmergencyIncident,
   } = useStore()
+  const { t } = useLanguage()
 
   const [providerId, setProviderId] =
     useState(
@@ -486,59 +508,17 @@ export function ProviderScreen() {
       | 'training'
       | 'trust'
       | 'profile'
+      | 'safety'
     >('overview')
+
+  const [safetyConfirmOpen, setSafetyConfirmOpen] =
+    useState(false)
 
   /*
    * ---------------------------------------------------------
    * PROVIDER WORKFLOW
    * ---------------------------------------------------------
    */
-
-  const [workflowStates, setWorkflowStates] =
-    useState<
-      Record<
-        string,
-        ProviderWorkflowStatus
-      >
-    >({})
-
-  useEffect(() => {
-    try {
-      const saved =
-        localStorage.getItem(
-          'nexa_link_provider_workflows',
-        )
-
-      if (saved) {
-        const parsed =
-          JSON.parse(saved)
-
-        if (
-          parsed &&
-          typeof parsed === 'object'
-        ) {
-          setWorkflowStates(
-            parsed,
-          )
-        }
-      }
-    } catch {
-      // Ignore invalid local storage data.
-    }
-  }, [])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'nexa_link_provider_workflows',
-        JSON.stringify(
-          workflowStates,
-        ),
-      )
-    } catch {
-      // Ignore local storage errors.
-    }
-  }, [workflowStates])
 
   const provider =
     PARTNERS.find(
@@ -652,70 +632,6 @@ export function ProviderScreen() {
 
   /*
    * ---------------------------------------------------------
-   * INITIALIZE PROVIDER WORKFLOW
-   * ---------------------------------------------------------
-   *
-   * If the order already has a system status,
-   * synchronize the provider journey with it.
-   */
-
-  useEffect(() => {
-    if (!providerOrders.length) {
-      return
-    }
-
-    setWorkflowStates((current) => {
-      const next = {
-        ...current,
-      }
-
-      let changed = false
-
-      for (const order of providerOrders) {
-        const expectedWorkflow =
-          getInitialWorkflow(
-            order.status,
-          )
-
-        /*
-         * Create workflow state for
-         * newly assigned jobs.
-         */
-        if (
-          !next[order.id]
-        ) {
-          next[order.id] =
-            expectedWorkflow
-
-          changed = true
-          continue
-        }
-
-        /*
-         * If the order was already completed,
-         * make sure provider journey is completed.
-         */
-        if (
-          order.status ===
-            'delivered' &&
-          next[order.id] !==
-            'completed'
-        ) {
-          next[order.id] =
-            'completed'
-
-          changed = true
-        }
-      }
-
-      return changed
-        ? next
-        : current
-    })
-  }, [providerOrders])
-
-  /*
-   * ---------------------------------------------------------
    * JOB STATS
    * ---------------------------------------------------------
    */
@@ -726,6 +642,29 @@ export function ProviderScreen() {
         order.status !==
         'delivered',
     )
+
+  const currentSafetyJob = activeJobs[0]
+  const activeSafetyIncident = emergencyIncidents.find(
+    (incident) =>
+      incident.providerId === provider.id &&
+      incident.status !== 'resolved' &&
+      incident.status !== 'cancelled',
+  )
+
+  function submitSafetyAlert() {
+    if (!currentSafetyJob) {
+      toast(t.safety.noActiveJob, 'info')
+      setSafetyConfirmOpen(false)
+      return
+    }
+
+    createEmergencyIncident(
+      currentSafetyJob.id,
+      provider.id,
+      'Emergency assistance requested from the Worker Safety Center.',
+    )
+    setSafetyConfirmOpen(false)
+  }
 
   const completedJobs =
     providerOrders.filter(
@@ -752,6 +691,31 @@ export function ProviderScreen() {
   const providerEarnings =
     completedRevenue -
     platformFee
+
+  const cooperativeEarningsForProvider = useMemo(
+    () => cooperativeEarnings
+      .filter((earning) => earning.providerId === provider.id)
+      .sort((a, b) => b.createdAt - a.createdAt),
+    [cooperativeEarnings, provider.id],
+  )
+
+  const cooperativeTotals = useMemo(() =>
+    cooperativeEarningsForProvider.reduce(
+      (totals, earning) => ({
+        gross: totals.gross + earning.grossEarnings,
+        net: totals.net + earning.netEarnings,
+        cooperative: totals.cooperative + earning.cooperativeContribution,
+        welfare: totals.welfare + earning.welfareContribution,
+      }),
+      { gross: 0, net: 0, cooperative: 0, welfare: 0 },
+    ), [cooperativeEarningsForProvider])
+
+  const fairPayScore = cooperativeEarningsForProvider.length
+    ? Math.round(cooperativeEarningsForProvider.reduce(
+      (sum, earning) => sum + earning.fairPayScore,
+      0,
+    ) / cooperativeEarningsForProvider.length)
+    : Math.round(Math.min(100, 70 + (provider.verified ? 10 : 0) + provider.experience * 2))
 
   /*
    * ---------------------------------------------------------
@@ -1359,22 +1323,9 @@ export function ProviderScreen() {
     orderId: string,
     orderStatus: OrderStatus,
   ) {
-    const currentWorkflow =
-      workflowStates[orderId] ??
-      getInitialWorkflow(
-        orderStatus,
-      )
-
-    /*
-     * Prevent the provider from skipping
-     * workflow stages.
-     */
-    const nextWorkflow =
-      getNextWorkflowStatus(
-        currentWorkflow,
-      )
-
-    if (!nextWorkflow) {
+    const journey = getDeliveryJourney(orderId)
+    const currentWorkflow = getWorkflowFromJourney(journey, orderStatus)
+    if (currentWorkflow === 'completed') {
       toast(
         'This job is already completed.',
         'info',
@@ -1382,37 +1333,18 @@ export function ProviderScreen() {
       return
     }
 
-    /*
-     * The system order status corresponding
-     * to the next provider workflow step.
-     */
-    const nextOrderStatus =
-      getOrderStatusForWorkflow(
-        nextWorkflow,
-      )
+    const updatedJourney = advanceDeliveryJourney(orderId)
+    if (!updatedJourney) return
+    const nextWorkflow = getWorkflowFromJourney(updatedJourney, orderStatus)
 
-    /*
-     * Update provider workflow.
-     */
-    setWorkflowStates(
-      (current) => ({
-        ...current,
-        [orderId]:
-          nextWorkflow,
-      }),
-    )
-
-    /*
-     * Update customer/system order.
-     */
-    if (
-      nextOrderStatus !==
-      orderStatus
-    ) {
-      advanceStatus(
-        orderId,
-        nextOrderStatus,
-      )
+    if (nextWorkflow === 'completed') {
+      const credited = creditCooperativeEarning(orderId, provider.id)
+      if (credited) {
+        toast(
+          `Earnings credited: ${rupees(credited.netEarnings)}.`,
+          'success',
+        )
+      }
     }
 
     /*
@@ -1483,20 +1415,18 @@ export function ProviderScreen() {
     return (
       <div className="min-h-dvh bg-background">
         <ScreenHeader
-          title="Provider Dashboard"
+          title={t.provider.dashboard}
         />
 
         <div className="px-4 py-10 text-center">
           <UserRound className="mx-auto h-12 w-12 text-muted-foreground" />
 
           <h2 className="mt-4 text-lg font-bold text-foreground">
-            No provider available
+            {t.provider.dashboard}
           </h2>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            Register a provider to
-            access the provider
-            dashboard.
+            {t.provider.cooperativeVerification}
           </p>
         </div>
       </div>
@@ -1506,7 +1436,7 @@ export function ProviderScreen() {
   return (
     <div className="min-h-dvh bg-background pb-28">
       <ScreenHeader
-        title="Provider Dashboard"
+        title={t.provider.dashboard}
         showBack={false}
       />
 
@@ -1524,7 +1454,7 @@ export function ProviderScreen() {
 
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Signed in as provider
+              {t.provider.profile}
             </p>
 
             <p className="truncate text-base font-bold text-foreground">
@@ -1535,8 +1465,8 @@ export function ProviderScreen() {
               <ShieldCheck className="h-3.5 w-3.5 text-primary" />
 
               {provider.verified
-                ? 'Verified cooperative provider'
-                : 'Verification pending'}
+                ? t.certification.verified
+                : t.certification.pending}
             </div>
           </div>
         </div>
@@ -1602,14 +1532,14 @@ export function ProviderScreen() {
             <div className="text-left">
               <p className="text-sm font-bold text-foreground">
                 {isOnline
-                  ? 'You are Online'
-                  : 'You are Offline'}
+                  ? t.provider.online
+                    : t.provider.offline}
               </p>
 
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {isOnline
-                  ? 'Ready to receive new service assignments'
-                  : 'You will not receive new assignments'}
+                  ? t.provider.activeJobs
+                  : t.provider.offline}
               </p>
             </div>
           </div>
@@ -1629,7 +1559,14 @@ export function ProviderScreen() {
           ===================================================== */}
 
       <section className="px-4 pt-5">
-        <div className="grid grid-cols-8 gap-2">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-9">
+          <DashboardTab
+            active={activeSection === 'safety'}
+            icon={<ShieldCheck className="h-4 w-4" />}
+            label={t.safety.title}
+            onClick={() => setActiveSection('safety')}
+          />
+
           <DashboardTab
             active={
               activeSection ===
@@ -1638,7 +1575,7 @@ export function ProviderScreen() {
             icon={
               <Activity className="h-4 w-4" />
             }
-            label="Overview"
+            label={t.provider.overview}
             onClick={() =>
               setActiveSection(
                 'overview',
@@ -1654,7 +1591,7 @@ export function ProviderScreen() {
             icon={
               <Navigation className="h-4 w-4" />
             }
-            label="Jobs"
+            label={t.provider.jobs}
             onClick={() =>
               setActiveSection(
                 'jobs',
@@ -1670,7 +1607,7 @@ export function ProviderScreen() {
             icon={
               <Wallet className="h-4 w-4" />
             }
-            label="Earnings"
+            label={t.provider.earnings}
             onClick={() =>
               setActiveSection(
                 'earnings',
@@ -1686,7 +1623,7 @@ export function ProviderScreen() {
             icon={
               <HeartPulse className="h-4 w-4" />
             }
-            label="Welfare"
+            label={t.provider.welfare}
             onClick={() =>
               setActiveSection(
                 'welfare',
@@ -1702,7 +1639,7 @@ export function ProviderScreen() {
             icon={
               <GraduationCap className="h-4 w-4" />
             }
-            label="Skills"
+            label={t.provider.skills}
             onClick={() =>
               setActiveSection(
                 'skills',
@@ -1718,7 +1655,7 @@ export function ProviderScreen() {
             icon={
               <BookOpen className="h-4 w-4" />
             }
-            label="Training"
+            label={t.provider.skillCertification}
             onClick={() =>
               setActiveSection(
                 'training',
@@ -1734,7 +1671,7 @@ export function ProviderScreen() {
             icon={
               <Trophy className="h-4 w-4" />
             }
-            label="Trust"
+            label={t.certification.customerTrust}
             onClick={() =>
               setActiveSection(
                 'trust',
@@ -1750,7 +1687,7 @@ export function ProviderScreen() {
             icon={
               <UserRound className="h-4 w-4" />
             }
-            label="Profile"
+            label={t.provider.profile}
             onClick={() =>
               setActiveSection(
                 'profile',
@@ -1759,6 +1696,92 @@ export function ProviderScreen() {
           />
         </div>
       </section>
+
+      {activeSection === 'safety' && (
+        <section className="space-y-4 px-4 pt-5">
+          <div className="rounded-3xl border border-destructive/25 bg-destructive/[0.04] p-5">
+            <div className="flex items-start gap-3">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-destructive text-destructive-foreground">
+                <CircleAlert className="size-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold uppercase tracking-wide text-destructive">
+                  {t.safety.title}
+                </p>
+                <h2 className="mt-1 font-display text-xl font-bold text-foreground">
+                  {t.safety.emergencySos}
+                </h2>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {activeSafetyIncident ? t.safety.emergencyActive : t.safety.readiness}
+                </p>
+              </div>
+              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">
+                {activeSafetyIncident ? t.safety.emergencyActive : currentSafetyJob ? t.safety.onActiveJob : t.safety.ready}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSafetyConfirmOpen(true)}
+              disabled={Boolean(activeSafetyIncident)}
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-destructive px-4 py-4 text-sm font-extrabold text-destructive-foreground shadow-[var(--shadow-soft)] transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CircleAlert className="size-5" />
+              {activeSafetyIncident ? t.safety.emergencyActive : t.safety.sendSos}
+            </button>
+            <p className="mt-2 text-center text-[10px] text-muted-foreground">
+              Demo cooperative dispatch. This does not contact public emergency services.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <p className="text-sm font-bold text-foreground">{t.safety.currentJob}</p>
+            {currentSafetyJob ? (
+              <div className="mt-3 space-y-2 text-xs">
+                <div className="flex justify-between gap-3"><span className="text-muted-foreground">{t.safety.service}</span><span className="font-bold text-foreground">{currentSafetyJob.services[0]?.serviceName ?? 'Service'}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-muted-foreground">{t.safety.customer}</span><span className="font-bold text-foreground">Customer</span></div>
+                <div className="flex justify-between gap-3"><span className="text-muted-foreground">{t.safety.location}</span><span className="max-w-[65%] text-right font-bold text-foreground">{currentSafetyJob.address.line}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-muted-foreground">{t.orders.orderDetails}</span><span className="font-mono font-bold text-foreground">#{currentSafetyJob.id}</span></div>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">{t.safety.noActiveJob}</p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <p className="text-sm font-bold text-foreground">{t.safety.instructions}</p>
+            <ul className="mt-3 space-y-2 text-xs leading-relaxed text-muted-foreground">
+              <li>• Move to a safe location when possible.</li>
+              <li>• Keep the customer and cooperative team informed.</li>
+              <li>• Use SOS only when assistance is genuinely required.</li>
+            </ul>
+            <p className="mt-3 text-xs text-muted-foreground">{t.safety.emergencyContact}: Cooperative support team</p>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <p className="text-sm font-bold text-foreground">{t.safety.incidentHistory}</p>
+            <div className="mt-3 space-y-2">
+              {emergencyIncidents.filter((incident) => incident.providerId === provider.id).map((incident) => (
+                <div key={incident.id} className="rounded-xl bg-secondary/60 p-3 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-foreground">{incident.serviceName}</p>
+                      <p className="mt-1 text-muted-foreground">#{incident.orderId} · {new Date(incident.timestamp).toLocaleDateString()}</p>
+                    </div>
+                    <span className="rounded-full bg-primary/10 px-2 py-1 text-[9px] font-bold text-primary">
+                      {incident.status === 'resolved' ? t.safety.resolved : incident.status === 'replacement-required' ? t.safety.replacementRequired : incident.status === 'assistance-sent' ? t.safety.assistanceSent : t.safety.dispatching}
+                    </span>
+                  </div>
+                  {incident.replacementProviderName && <p className="mt-2 text-muted-foreground">Replacement: {incident.replacementProviderName}</p>}
+                </div>
+              ))}
+              {emergencyIncidents.filter((incident) => incident.providerId === provider.id).length === 0 && (
+                <p className="text-xs text-muted-foreground">{t.admin.noData}</p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* =====================================================
           OVERVIEW
@@ -1807,6 +1830,48 @@ export function ProviderScreen() {
                 providerEarnings,
               )}
             />
+          </section>
+
+          <section className="px-4 pt-5">
+            <SectionTitle
+              icon={<Wallet className="h-4 w-4" />}
+              title="Cooperative Earnings & Fair Pay"
+            />
+
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <ProviderStat label="Net earnings" value={rupees(cooperativeTotals.net)} />
+              <ProviderStat label="Co-op contribution" value={rupees(cooperativeTotals.cooperative)} />
+              <ProviderStat label="Welfare fund" value={rupees(cooperativeTotals.welfare)} />
+              <ProviderStat label="Avg / job" value={rupees(cooperativeEarningsForProvider.length ? Math.round(cooperativeTotals.net / cooperativeEarningsForProvider.length) : 0)} />
+            </div>
+
+            <div className="mt-3 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-foreground">Fair Pay Score</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Verified skills, rating, experience, travel and emergency priority are included.</p>
+                </div>
+                <span className="rounded-full bg-primary px-3 py-1 text-sm font-bold text-primary-foreground">{fairPayScore}/100</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-primary/15"><div className="h-full rounded-full bg-primary" style={{ width: `${fairPayScore}%` }} /></div>
+              <p className="mt-2 text-[11px] text-muted-foreground">Transparent demo calculation: base service pay + verified skill, reliability, travel and emergency bonuses − cooperative and welfare contributions.</p>
+            </div>
+
+            <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card">
+              <div className="border-b border-border px-4 py-3">
+                <p className="text-sm font-bold text-foreground">Recent Earnings</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">Each completed job is credited once and kept in your cooperative history.</p>
+              </div>
+              <div className="divide-y divide-border">
+                {cooperativeEarningsForProvider.slice(0, 5).map((earning) => (
+                  <div key={earning.id} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-foreground">{earning.serviceName}</p><p className="mt-0.5 text-[10px] text-muted-foreground">Base {rupees(earning.basePay)} + travel {rupees(earning.travelCompensation)} + skill {rupees(earning.skillBonus)}{earning.emergencyBonus > 0 ? ` + emergency ${rupees(earning.emergencyBonus)}` : ''}</p></div><p className="text-sm font-bold text-primary">{rupees(earning.netEarnings)}</p></div>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Co-op {rupees(earning.cooperativeContribution)} · Welfare {rupees(earning.welfareContribution)} · Fair pay {earning.fairPayScore}/100</p>
+                  </div>
+                ))}
+                {cooperativeEarningsForProvider.length === 0 && <div className="px-4 py-6 text-xs text-muted-foreground">Complete a provider job to generate an explainable cooperative payout.</div>}
+              </div>
+            </div>
           </section>
 
           <section className="px-4 pt-5">
@@ -2164,10 +2229,8 @@ export function ProviderScreen() {
                       provider.id
                     }
                     workflowStatus={
-                      workflowStates[
-                        order.id
-                      ] ??
-                      getInitialWorkflow(
+                      getWorkflowFromJourney(
+                        getDeliveryJourney(order.id),
                         order.status,
                       )
                     }
@@ -2219,10 +2282,8 @@ export function ProviderScreen() {
                     provider.id
                   }
                   workflowStatus={
-                    workflowStates[
-                      order.id
-                    ] ??
-                    getInitialWorkflow(
+                    getWorkflowFromJourney(
+                      getDeliveryJourney(order.id),
                       order.status,
                     )
                   }
@@ -3728,6 +3789,32 @@ export function ProviderScreen() {
           </div>
         </div>
       </section>
+
+      <Modal
+        open={safetyConfirmOpen}
+        onClose={() => setSafetyConfirmOpen(false)}
+        title={t.safety.confirmTitle}
+      >
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          {t.safety.confirmMessage}
+        </p>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setSafetyConfirmOpen(false)}
+            className="rounded-xl border border-border px-4 py-3 text-sm font-bold text-foreground"
+          >
+            {t.safety.cancel}
+          </button>
+          <button
+            type="button"
+            onClick={submitSafetyAlert}
+            className="rounded-xl bg-destructive px-4 py-3 text-sm font-bold text-destructive-foreground"
+          >
+            {t.safety.sendSos}
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -4392,6 +4479,21 @@ function EmptyState({
       <p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-muted-foreground">
         {description}
       </p>
+    </div>
+  )
+}
+
+function ProviderStat({
+  label,
+  value,
+}: {
+  label: string
+  value: string
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card px-3 py-2.5">
+      <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate text-sm font-bold text-foreground">{value}</p>
     </div>
   )
 }

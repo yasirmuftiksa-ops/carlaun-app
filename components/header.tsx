@@ -21,6 +21,7 @@ import { Modal } from '@/components/ui/modal'
 import { SAVED_LOCATIONS, SERVICES } from '@/lib/data'
 import { Icon } from '@/lib/icons'
 import { useStore } from '@/lib/store'
+import { useLanguage } from '@/components/language-provider'
 
 const NAV = [
   { label: 'Home', target: 'home' as const },
@@ -59,6 +60,15 @@ export function Header() {
     markAllNotificationsRead,
     clearNotifications,
   } = useStore()
+  const { t } = useLanguage()
+
+  const navLabels = [
+    t.common.home,
+    t.common.services,
+    t.common.howItWorks,
+    t.common.carePartners,
+    t.common.offers,
+  ]
 
   const [locOpen, setLocOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -137,7 +147,7 @@ export function Header() {
                 }
                 className="group relative rounded-xl px-3 py-2.5 text-sm font-semibold text-muted-foreground transition-all duration-200 hover:bg-primary/[0.06] hover:text-foreground"
               >
-                {item.label}
+                {navLabels[NAV.indexOf(item)] ?? item.label}
 
                 <span className="absolute inset-x-3 bottom-1 h-0.5 origin-left scale-x-0 rounded-full bg-primary transition-transform duration-200 group-hover:scale-x-100" />
               </button>
@@ -149,7 +159,7 @@ export function Header() {
               }
               className="rounded-xl px-3 py-2.5 text-sm font-semibold text-muted-foreground transition-all duration-200 hover:bg-primary/[0.06] hover:text-foreground"
             >
-              Track Service
+              {t.common.track} {t.common.services}
             </button>
           </nav>
 
@@ -166,7 +176,7 @@ export function Header() {
 
               <span className="min-w-0">
                 <span className="block text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                  Service area
+                  {t.common.serviceArea}
                 </span>
 
                 <span className="block truncate text-xs font-bold text-foreground">
@@ -214,7 +224,7 @@ export function Header() {
                   <div className="flex items-center justify-between border-b border-border px-4 py-3">
                     <div>
                       <p className="text-sm font-bold text-foreground">
-                        Notifications
+                        {t.common.notifications}
                       </p>
 
                       <p className="text-xs text-muted-foreground">
@@ -235,7 +245,7 @@ export function Header() {
                           onClick={() =>
                             markAllNotificationsRead()
                           }
-                          title="Mark all as read"
+                          title={t.common.markAllRead}
                           className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         >
                           <CheckCheck className="size-4" />
@@ -247,7 +257,7 @@ export function Header() {
                           onClick={() =>
                             clearNotifications()
                           }
-                          title="Clear notifications"
+                          title={t.common.clearAll}
                           className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
                         >
                           <Trash2 className="size-4" />
@@ -264,7 +274,7 @@ export function Header() {
                         </span>
 
                         <p className="text-sm font-bold text-foreground">
-                          No notifications yet
+                          {t.common.noNotifications}
                         </p>
 
                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -304,7 +314,7 @@ export function Header() {
                       }}
                       className="w-full rounded-xl bg-muted px-4 py-2.5 text-sm font-bold text-foreground transition-colors hover:bg-primary/10 hover:text-primary"
                     >
-                      View My Orders
+                      {t.orders.title}
                     </button>
                   </div>
                 </div>
@@ -345,7 +355,7 @@ export function Header() {
               className="ml-1 hidden items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground shadow-[var(--shadow-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[var(--shadow-lift)] active:translate-y-0 active:scale-[0.98] lg:inline-flex"
             >
               <Sparkles className="size-4" />
-              Find a Service
+              {t.home.findProvider}
             </button>
 
             {/* Mobile menu */}
@@ -405,7 +415,7 @@ export function Header() {
 
                 <span className="flex-1">
                   <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                    Service area
+                    {t.common.serviceArea}
                   </span>
 
                   <span className="mt-0.5 block text-sm font-bold text-foreground">
@@ -438,7 +448,7 @@ export function Header() {
                 }}
                 className="rounded-xl px-3 py-3.5 text-left text-sm font-semibold text-foreground transition-all duration-200 hover:bg-muted"
               >
-                Track Service
+                  {t.common.track} {t.common.services}
               </button>
 
               <div className="my-2 border-t border-border/70" />
@@ -453,7 +463,7 @@ export function Header() {
               >
                 <span className="flex items-center gap-3">
                   <Bell className="size-4 text-primary" />
-                  Notifications
+                  {t.common.notifications}
                 </span>
 
                 {unreadNotificationCount > 0 && (
@@ -472,7 +482,7 @@ export function Header() {
                 }}
                 className="rounded-xl px-3 py-3.5 text-left text-sm font-semibold text-foreground transition-all duration-200 hover:bg-muted"
               >
-                Provider Dashboard
+                {t.provider.dashboard}
               </button>
 
               <button
@@ -482,7 +492,7 @@ export function Header() {
                 }}
                 className="rounded-xl px-3 py-3.5 text-left text-sm font-semibold text-foreground transition-all duration-200 hover:bg-muted"
               >
-                Admin Dashboard
+                {t.admin.dashboard}
               </button>
 
               <button
@@ -493,7 +503,7 @@ export function Header() {
                 className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-[var(--shadow-soft)] transition-all hover:brightness-110"
               >
                 <Sparkles className="size-4" />
-                Find a Service
+                {t.home.findProvider}
               </button>
             </div>
           </motion.div>
@@ -507,7 +517,7 @@ export function Header() {
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <div>
                 <p className="text-base font-bold text-foreground">
-                  Notifications
+                  {t.common.notifications}
                 </p>
 
                 <p className="text-xs text-muted-foreground">
@@ -562,7 +572,7 @@ export function Header() {
                   </span>
 
                   <p className="text-sm font-bold text-foreground">
-                    No notifications yet
+                    {t.common.noNotifications}
                   </p>
 
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -598,7 +608,7 @@ export function Header() {
                 }}
                 className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground"
               >
-                View My Orders
+                {t.orders.title}
               </button>
             </div>
           </div>
@@ -609,7 +619,7 @@ export function Header() {
       <Modal
         open={locOpen}
         onClose={() => setLocOpen(false)}
-        title="Service area"
+        title={t.common.serviceArea}
       >
         <button
           onClick={() => {
@@ -684,7 +694,7 @@ export function Header() {
       <Modal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
-        title="Find a service"
+        title={t.home.findProvider}
       >
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -703,7 +713,7 @@ export function Header() {
         {query === '' && (
           <>
             <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
-              Popular services
+              {t.home.popularServices}
             </p>
 
             <div className="mb-4 flex flex-wrap gap-2">

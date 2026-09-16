@@ -30,7 +30,16 @@ type Recommendation = {
   rating: string
   distance: string
   turnaround: string
-  icon: 'home' | 'wrench' | 'zap' | 'hammer' | 'paint' | 'leaf' | 'heart' | 'car' | 'shirt'
+  icon:
+    | 'home'
+    | 'wrench'
+    | 'zap'
+    | 'hammer'
+    | 'paint'
+    | 'leaf'
+    | 'heart'
+    | 'car'
+    | 'shirt'
 }
 
 type LanguageContent = {
@@ -172,14 +181,16 @@ const content: Record<'en' | 'ta' | 'hi', LanguageContent> = {
       'I need an electrician today',
       'I need a driver urgently',
     ],
-    placeholder: 'e.g. I need a plumber for a leaking tap...',
+    placeholder:
+      'e.g. I need a plumber for a leaking tap...',
     askAI: 'Ask NeXa Link AI',
-    analysing: 'NeXa Link AI is analysing your service request...',
+    analysing:
+      'NeXa Link AI is analysing your service request...',
     recommendation: 'AI Recommendation',
     provider: 'Recommended Provider',
     why: 'Why this recommendation?',
     reasoning:
-      'NeXa Link analysed your request and matched the required service, urgency and provider performance to find a suitable cooperative service.',
+      'NeXa Link AI analysed your request and matched it with the most suitable service category and cooperative provider.',
     continue: 'Continue with Recommendation',
     serviceLabel: 'Service',
     ratingLabel: 'Rating',
@@ -201,14 +212,16 @@ const content: Record<'en' | 'ta' | 'hi', LanguageContent> = {
       'இன்று எலக்ட்ரீஷியன் வேண்டும்',
       'அவசரமாக டிரைவர் வேண்டும்',
     ],
-    placeholder: 'உதாரணம்: கசியும் குழாய்க்கு பிளம்பர் வேண்டும்...',
+    placeholder:
+      'உதாரணம்: கசியும் குழாய்க்கு பிளம்பர் வேண்டும்...',
     askAI: 'NeXa Link AI-யிடம் கேளுங்கள்',
-    analysing: 'NeXa Link AI உங்கள் சேவை கோரிக்கையை ஆய்வு செய்கிறது...',
+    analysing:
+      'NeXa Link AI உங்கள் சேவை கோரிக்கையை ஆய்வு செய்கிறது...',
     recommendation: 'AI பரிந்துரை',
     provider: 'பரிந்துரைக்கப்பட்ட சேவை வழங்குநர்',
     why: 'இந்த பரிந்துரை ஏன்?',
     reasoning:
-      'NeXa Link உங்கள் கோரிக்கையை ஆய்வு செய்து, தேவையான சேவை, அவசரம் மற்றும் சேவை வழங்குநரின் செயல்திறனை பொருத்தி பொருத்தமான கூட்டுறவு சேவையை கண்டறிந்தது.',
+      'NeXa Link AI உங்கள் கோரிக்கையை ஆய்வு செய்து, பொருத்தமான சேவை மற்றும் கூட்டுறவு சேவை வழங்குநரை பரிந்துரைத்தது.',
     continue: 'பரிந்துரையுடன் தொடரவும்',
     serviceLabel: 'சேவை',
     ratingLabel: 'மதிப்பீடு',
@@ -230,14 +243,16 @@ const content: Record<'en' | 'ta' | 'hi', LanguageContent> = {
       'मुझे आज इलेक्ट्रीशियन चाहिए',
       'मुझे तुरंत ड्राइवर चाहिए',
     ],
-    placeholder: 'उदाहरण: मुझे नल के रिसाव के लिए प्लंबर चाहिए...',
+    placeholder:
+      'उदाहरण: मुझे नल के रिसाव के लिए प्लंबर चाहिए...',
     askAI: 'NeXa Link AI से पूछें',
-    analysing: 'NeXa Link AI आपकी सेवा अनुरोध का विश्लेषण कर रहा है...',
+    analysing:
+      'NeXa Link AI आपकी सेवा अनुरोध का विश्लेषण कर रहा है...',
     recommendation: 'AI सिफारिश',
     provider: 'अनुशंसित सेवा प्रदाता',
     why: 'यह सिफारिश क्यों?',
     reasoning:
-      'NeXa Link ने आपके अनुरोध का विश्लेषण किया और आवश्यक सेवा, आवश्यकता की जल्दी तथा प्रदाता के प्रदर्शन का मिलान करके उपयुक्त सहकारी सेवा खोजी।',
+      'NeXa Link AI ने आपके अनुरोध का विश्लेषण करके उपयुक्त सेवा और सहकारी सेवा प्रदाता की सिफारिश की।',
     continue: 'सिफारिश के साथ जारी रखें',
     serviceLabel: 'सेवा',
     ratingLabel: 'रेटिंग',
@@ -268,7 +283,7 @@ const recommendationTranslations: Record<
     {
       title: 'வீட்டு சுத்தம் சேவை',
       description:
-        'வீட்டு சுத்தம், ஆழமான சுத்தம் மற்றும் வழக்கமான வீட்டு பராமரிப்புக்கான கூட்டுறவு சேவை.',
+        'வீட்டு சுத்தம் மற்றும் வழக்கமான வீட்டு பராமரிப்புக்கான கூட்டுறவு சேவை.',
       service: 'வீட்டு சுத்தம்',
       provider: 'SparkHome Cooperative',
       turnaround: 'அதே நாள்',
@@ -276,7 +291,7 @@ const recommendationTranslations: Record<
     {
       title: 'பிளம்பிங் சேவை',
       description:
-        'குழாய் பழுது, தண்ணீர் கசிவு, குழாய்கள் மற்றும் வடிகால் பணிகளுக்கான திறமையான கூட்டுறவு பிளம்பர்கள்.',
+        'குழாய் பழுது, தண்ணீர் கசிவு மற்றும் வடிகால் பணிகளுக்கான திறமையான கூட்டுறவு பிளம்பர்கள்.',
       service: 'பிளம்பிங்',
       provider: 'AquaFix Cooperative',
       turnaround: 'அதே நாள்',
@@ -284,7 +299,7 @@ const recommendationTranslations: Record<
     {
       title: 'எலக்ட்ரிக்கல் சேவை',
       description:
-        'வயரிங், சுவிட்ச், விளக்குகள் மற்றும் மின்சார பழுதுபார்ப்புக்கான சரிபார்க்கப்பட்ட எலக்ட்ரீஷியன்கள்.',
+        'வயரிங், சுவிட்ச், விளக்குகள் மற்றும் மின்சார பழுதுபார்ப்புக்கான எலக்ட்ரீஷியன்கள்.',
       service: 'எலக்ட்ரிக்கல்',
       provider: 'PowerCare Cooperative',
       turnaround: 'அதே நாள்',
@@ -292,7 +307,7 @@ const recommendationTranslations: Record<
     {
       title: 'தச்சு வேலை சேவை',
       description:
-        'மரச்சாமான்கள், கதவுகள், அலமாரிகள் மற்றும் வீட்டு மரப்பணிகளுக்கான திறமையான தச்சர்கள்.',
+        'மரச்சாமான்கள், கதவுகள், அலமாரிகள் மற்றும் வீட்டு மரப்பணிகளுக்கான தச்சர்கள்.',
       service: 'தச்சு வேலை',
       provider: 'WoodCraft Cooperative',
       turnaround: '1–2 நாட்கள்',
@@ -300,7 +315,7 @@ const recommendationTranslations: Record<
     {
       title: 'பெயிண்டிங் சேவை',
       description:
-        'சுவர், அறைகள், டச்-அப் மற்றும் வீட்டு பெயிண்டிங் பணிகளுக்கான தொழில்முறை கூட்டுறவு சேவை.',
+        'சுவர், அறைகள் மற்றும் வீட்டு பெயிண்டிங் பணிகளுக்கான கூட்டுறவு சேவை.',
       service: 'பெயிண்டிங்',
       provider: 'ColorCraft Cooperative',
       turnaround: '1–2 நாட்கள்',
@@ -308,7 +323,7 @@ const recommendationTranslations: Record<
     {
       title: 'தோட்டப் பராமரிப்பு சேவை',
       description:
-        'தோட்ட பராமரிப்பு, செடிகள், கிளை வெட்டுதல் மற்றும் வெளிப்புற பராமரிப்புக்கான உள்ளூர் கூட்டுறவு தோட்டக்காரர்கள்.',
+        'தோட்ட பராமரிப்பு, செடிகள் மற்றும் வெளிப்புற பராமரிப்புக்கான கூட்டுறவு தோட்டக்காரர்கள்.',
       service: 'தோட்டப் பராமரிப்பு',
       provider: 'GreenCare Cooperative',
       turnaround: 'அதே நாள்',
@@ -316,7 +331,7 @@ const recommendationTranslations: Record<
     {
       title: 'பராமரிப்பு சேவை',
       description:
-        'முதியோர் உதவி, தினசரி ஆதரவு மற்றும் வீட்டு பராமரிப்புக்கான சரிபார்க்கப்பட்ட பராமரிப்பாளர்கள்.',
+        'முதியோர் உதவி மற்றும் தினசரி பராமரிப்புக்கான சரிபார்க்கப்பட்ட பராமரிப்பாளர்கள்.',
       service: 'பராமரிப்பு',
       provider: 'CareCircle Cooperative',
       turnaround: 'அதே நாள்',
@@ -324,7 +339,7 @@ const recommendationTranslations: Record<
     {
       title: 'டிரைவர் சேவை',
       description:
-        'உள்ளூர் பயணம், திட்டமிட்ட ஓட்டுநர் சேவை மற்றும் அவசர தேவைகளுக்கான சரிபார்க்கப்பட்ட கூட்டுறவு டிரைவர்கள்.',
+        'உள்ளூர் பயணம் மற்றும் அவசர தேவைகளுக்கான சரிபார்க்கப்பட்ட கூட்டுறவு டிரைவர்கள்.',
       service: 'டிரைவர்',
       provider: 'CityRide Cooperative',
       turnaround: '30 நிமிடங்களுக்குள்',
@@ -343,7 +358,7 @@ const recommendationTranslations: Record<
     {
       title: 'होम क्लीनिंग सेवा',
       description:
-        'घर की सफाई, डीप क्लीनिंग और नियमित घरेलू सफाई के लिए सहकारी सेवा।',
+        'घर की सफाई और नियमित घरेलू सफाई के लिए सहकारी सेवा।',
       service: 'होम क्लीनिंग',
       provider: 'SparkHome Cooperative',
       turnaround: 'उसी दिन',
@@ -351,7 +366,7 @@ const recommendationTranslations: Record<
     {
       title: 'प्लंबिंग सेवा',
       description:
-        'पाइप की मरम्मत, पानी का रिसाव, नल और ड्रेनेज कार्य के लिए कुशल सहकारी प्लंबर।',
+        'पाइप की मरम्मत, पानी के रिसाव और ड्रेनेज के लिए कुशल सहकारी प्लंबर।',
       service: 'प्लंबिंग',
       provider: 'AquaFix Cooperative',
       turnaround: 'उसी दिन',
@@ -367,7 +382,7 @@ const recommendationTranslations: Record<
     {
       title: 'कारपेंट्री सेवा',
       description:
-        'फर्नीचर, दरवाजे, शेल्फ और घरेलू लकड़ी के काम के लिए कुशल सहकारी बढ़ई।',
+        'फर्नीचर, दरवाजे, शेल्फ और लकड़ी के काम के लिए कुशल सहकारी बढ़ई।',
       service: 'कारपेंट्री',
       provider: 'WoodCraft Cooperative',
       turnaround: '1–2 दिन',
@@ -375,7 +390,7 @@ const recommendationTranslations: Record<
     {
       title: 'पेंटिंग सेवा',
       description:
-        'कमरे, दीवार, टच-अप और घर की पेंटिंग के लिए पेशेवर सहकारी सेवा।',
+        'कमरे, दीवार और घर की पेंटिंग के लिए पेशेवर सहकारी सेवा।',
       service: 'पेंटिंग',
       provider: 'ColorCraft Cooperative',
       turnaround: '1–2 दिन',
@@ -383,7 +398,7 @@ const recommendationTranslations: Record<
     {
       title: 'गार्डनिंग सेवा',
       description:
-        'बगीचे की देखभाल, पौधों, कटाई और बाहरी रखरखाव के लिए स्थानीय सहकारी माली।',
+        'बगीचे की देखभाल और बाहरी रखरखाव के लिए स्थानीय सहकारी माली।',
       service: 'गार्डनिंग',
       provider: 'GreenCare Cooperative',
       turnaround: 'उसी दिन',
@@ -391,7 +406,7 @@ const recommendationTranslations: Record<
     {
       title: 'केयरगिविंग सेवा',
       description:
-        'बुजुर्गों की सहायता, दैनिक सहयोग और घरेलू देखभाल के लिए सत्यापित केयरगिवर।',
+        'बुजुर्गों की सहायता और घरेलू देखभाल के लिए सत्यापित केयरगिवर।',
       service: 'केयरगिविंग',
       provider: 'CareCircle Cooperative',
       turnaround: 'उसी दिन',
@@ -399,7 +414,7 @@ const recommendationTranslations: Record<
     {
       title: 'ड्राइवर सेवा',
       description:
-        'स्थानीय यात्रा, निर्धारित ड्राइविंग और तत्काल आवश्यकताओं के लिए सत्यापित सहकारी ड्राइवर।',
+        'स्थानीय यात्रा और तत्काल आवश्यकताओं के लिए सत्यापित सहकारी ड्राइवर।',
       service: 'ड्राइवर',
       provider: 'CityRide Cooperative',
       turnaround: '30 मिनट के भीतर',
@@ -455,10 +470,182 @@ function RecommendationIcon({
   return <Shirt className="h-5 w-5" />
 }
 
+function getFallbackIndex(message: string) {
+  const requestText = message.toLowerCase()
+
+  if (
+    requestText.includes('plumb') ||
+    requestText.includes('pipe') ||
+    requestText.includes('leak') ||
+    requestText.includes('tap') ||
+    requestText.includes('water') ||
+    requestText.includes('குழாய்') ||
+    requestText.includes('கசிவு') ||
+    requestText.includes('தண்ணீர்') ||
+    requestText.includes('பிளம்பர்') ||
+    requestText.includes('प्लंबर') ||
+    requestText.includes('पाइप') ||
+    requestText.includes('रिसाव') ||
+    requestText.includes('पानी') ||
+    requestText.includes('नल')
+  ) {
+    return 1
+  }
+
+  if (
+    requestText.includes('electric') ||
+    requestText.includes('electrician') ||
+    requestText.includes('wiring') ||
+    requestText.includes('switch') ||
+    requestText.includes('light') ||
+    requestText.includes('current') ||
+    requestText.includes('மின்சாரம்') ||
+    requestText.includes('எலக்ட்ரீஷியன்') ||
+    requestText.includes('வயரிங்') ||
+    requestText.includes('சுவிட்ச்') ||
+    requestText.includes('इलेक्ट्रीशियन') ||
+    requestText.includes('बिजली') ||
+    requestText.includes('वायरिंग')
+  ) {
+    return 2
+  }
+
+  if (
+    requestText.includes('carpenter') ||
+    requestText.includes('carpentry') ||
+    requestText.includes('furniture') ||
+    requestText.includes('wood') ||
+    requestText.includes('door') ||
+    requestText.includes('தச்சு') ||
+    requestText.includes('மரப்பணி') ||
+    requestText.includes('மரச்சாமான்கள்') ||
+    requestText.includes('கதவு') ||
+    requestText.includes('बढ़ई') ||
+    requestText.includes('लकड़ी') ||
+    requestText.includes('फर्नीचर')
+  ) {
+    return 3
+  }
+
+  if (
+    requestText.includes('paint') ||
+    requestText.includes('painting') ||
+    requestText.includes('wall') ||
+    requestText.includes('colour') ||
+    requestText.includes('color') ||
+    requestText.includes('பெயிண்ட்') ||
+    requestText.includes('சுவர்') ||
+    requestText.includes('வண்ணம்') ||
+    requestText.includes('पेंट') ||
+    requestText.includes('दीवार') ||
+    requestText.includes('रंग')
+  ) {
+    return 4
+  }
+
+  if (
+    requestText.includes('garden') ||
+    requestText.includes('gardening') ||
+    requestText.includes('plant') ||
+    requestText.includes('plants') ||
+    requestText.includes('தோட்டம்') ||
+    requestText.includes('செடி') ||
+    requestText.includes('बगीचा') ||
+    requestText.includes('पौधा')
+  ) {
+    return 5
+  }
+
+  if (
+    requestText.includes('caregiver') ||
+    requestText.includes('caregiving') ||
+    requestText.includes('elderly') ||
+    requestText.includes('senior') ||
+    requestText.includes('patient') ||
+    requestText.includes('முதியோர்') ||
+    requestText.includes('பராமரிப்பு') ||
+    requestText.includes('நோயாளி') ||
+    requestText.includes('देखभाल') ||
+    requestText.includes('बुजुर्ग')
+  ) {
+    return 6
+  }
+
+  if (
+    requestText.includes('driver') ||
+    requestText.includes('driving') ||
+    requestText.includes('car') ||
+    requestText.includes('ride') ||
+    requestText.includes('டிரைவர்') ||
+    requestText.includes('ஓட்டுநர்') ||
+    requestText.includes('பயணம்') ||
+    requestText.includes('ड्राइवर') ||
+    requestText.includes('गाड़ी') ||
+    requestText.includes('यात्रा')
+  ) {
+    return 7
+  }
+
+  if (
+    requestText.includes('laundry') ||
+    requestText.includes('clothes') ||
+    requestText.includes('shirt') ||
+    requestText.includes('trouser') ||
+    requestText.includes('dress') ||
+    requestText.includes('wash') ||
+    requestText.includes('dry clean') ||
+    requestText.includes('iron') ||
+    requestText.includes('சலவை') ||
+    requestText.includes('ஆடைகள்') ||
+    requestText.includes('துணி') ||
+    requestText.includes('லாண்ட்ரி') ||
+    requestText.includes('कपड़े') ||
+    requestText.includes('लॉन्ड्री') ||
+    requestText.includes('धुलाई') ||
+    requestText.includes('इस्त्री')
+  ) {
+    return 8
+  }
+
+  if (
+    requestText.includes('clean') ||
+    requestText.includes('cleaning') ||
+    requestText.includes('house') ||
+    requestText.includes('home') ||
+    requestText.includes('சுத்தம்') ||
+    requestText.includes('வீடு') ||
+    requestText.includes('सफाई') ||
+    requestText.includes('घर')
+  ) {
+    return 0
+  }
+
+  return 0
+}
+
+function isUrgentRequest(message: string) {
+  const requestText = message.toLowerCase()
+
+  return (
+    requestText.includes('urgent') ||
+    requestText.includes('emergency') ||
+    requestText.includes('immediately') ||
+    requestText.includes('right now') ||
+    requestText.includes('அவசரம்') ||
+    requestText.includes('அவசர') ||
+    requestText.includes('உடனே') ||
+    requestText.includes('அவசரமாக') ||
+    requestText.includes('तुरंत') ||
+    requestText.includes('आपातकाल') ||
+    requestText.includes('अभी')
+  )
+}
+
 export function AIAssistant() {
   const { language } = useLanguage()
 
   const text = content[language]
+
   const translatedRecommendations =
     recommendationTranslations[language]
 
@@ -468,240 +655,111 @@ export function AIAssistant() {
   const [recommendation, setRecommendation] =
     useState<Recommendation | null>(null)
 
-  const askAI = () => {
-    if (!message.trim()) return
+  const showRecommendation = (
+    resultIndex: number,
+    urgent: boolean,
+  ) => {
+    const safeIndex =
+      Number.isInteger(resultIndex) &&
+      resultIndex >= 0 &&
+      resultIndex < recommendations.length
+        ? resultIndex
+        : 0
+
+    const baseRecommendation = recommendations[safeIndex]
+    const translatedRecommendation =
+      translatedRecommendations[safeIndex]
+
+    setRecommendation({
+      ...baseRecommendation,
+      title: translatedRecommendation.title,
+      description: translatedRecommendation.description,
+      service: translatedRecommendation.service,
+      provider: translatedRecommendation.provider,
+      turnaround: urgent
+        ? language === 'ta'
+          ? 'அவசர சேவை கிடைக்கும்'
+          : language === 'hi'
+            ? 'आपातकालीन सेवा उपलब्ध'
+            : 'Priority service available'
+        : translatedRecommendation.turnaround,
+    })
+  }
+
+  const askAI = async () => {
+    const trimmedMessage = message.trim()
+
+    if (!trimmedMessage || loading) {
+      return
+    }
 
     setLoading(true)
     setRecommendation(null)
 
-    setTimeout(() => {
-      const requestText = message.toLowerCase()
-
-      let resultIndex = 0
-
-      /*
-       * Home cleaning
-       */
-      if (
-        requestText.includes('clean') ||
-        requestText.includes('cleaning') ||
-        requestText.includes('house') ||
-        requestText.includes('home') ||
-        requestText.includes('சுத்தம்') ||
-        requestText.includes('வீடு') ||
-        requestText.includes('सफाई') ||
-        requestText.includes('घर')
-      ) {
-        resultIndex = 0
-      }
-
-      /*
-       * Plumbing
-       */
-      else if (
-        requestText.includes('plumb') ||
-        requestText.includes('pipe') ||
-        requestText.includes('leak') ||
-        requestText.includes('tap') ||
-        requestText.includes('water') ||
-        requestText.includes('குழாய்') ||
-        requestText.includes('கசிவு') ||
-        requestText.includes('தண்ணீர்') ||
-        requestText.includes('பிளம்பர்') ||
-        requestText.includes('प्लंबर') ||
-        requestText.includes('पाइप') ||
-        requestText.includes('रिसाव') ||
-        requestText.includes('पानी') ||
-        requestText.includes('नल')
-      ) {
-        resultIndex = 1
-      }
-
-      /*
-       * Electrical
-       */
-      else if (
-        requestText.includes('electric') ||
-        requestText.includes('electrician') ||
-        requestText.includes('wiring') ||
-        requestText.includes('switch') ||
-        requestText.includes('light') ||
-        requestText.includes('current') ||
-        requestText.includes('மின்சாரம்') ||
-        requestText.includes('எலக்ட்ரீஷியன்') ||
-        requestText.includes('வயரிங்') ||
-        requestText.includes('சுவிட்ச்') ||
-        requestText.includes('मिस्त्री') ||
-        requestText.includes('इलेक्ट्रीशियन') ||
-        requestText.includes('बिजली') ||
-        requestText.includes('वायरिंग') ||
-        requestText.includes('स्विच')
-      ) {
-        resultIndex = 2
-      }
-
-      /*
-       * Carpentry
-       */
-      else if (
-        requestText.includes('carpenter') ||
-        requestText.includes('carpentry') ||
-        requestText.includes('furniture') ||
-        requestText.includes('wood') ||
-        requestText.includes('door') ||
-        requestText.includes('தச்சு') ||
-        requestText.includes('மரப்பணி') ||
-        requestText.includes('மரச்சாமான்கள்') ||
-        requestText.includes('கதவு') ||
-        requestText.includes('बढ़ई') ||
-        requestText.includes('लकड़ी') ||
-        requestText.includes('फर्नीचर') ||
-        requestText.includes('दरवाजा')
-      ) {
-        resultIndex = 3
-      }
-
-      /*
-       * Painting
-       */
-      else if (
-        requestText.includes('paint') ||
-        requestText.includes('painting') ||
-        requestText.includes('wall') ||
-        requestText.includes('colour') ||
-        requestText.includes('color') ||
-        requestText.includes('பெயிண்ட்') ||
-        requestText.includes('சுவர்') ||
-        requestText.includes('வண்ணம்') ||
-        requestText.includes('पेंट') ||
-        requestText.includes('दीवार') ||
-        requestText.includes('रंग')
-      ) {
-        resultIndex = 4
-      }
-
-      /*
-       * Gardening
-       */
-      else if (
-        requestText.includes('garden') ||
-        requestText.includes('gardening') ||
-        requestText.includes('plant') ||
-        requestText.includes('plants') ||
-        requestText.includes('தோட்டம்') ||
-        requestText.includes('செடி') ||
-        requestText.includes('தோட்டப்') ||
-        requestText.includes('बगीचा') ||
-        requestText.includes('पौधा') ||
-        requestText.includes('गार्डन')
-      ) {
-        resultIndex = 5
-      }
-
-      /*
-       * Caregiving
-       */
-      else if (
-        requestText.includes('caregiver') ||
-        requestText.includes('caregiving') ||
-        requestText.includes('elderly') ||
-        requestText.includes('old') ||
-        requestText.includes('senior') ||
-        requestText.includes('patient') ||
-        requestText.includes('முதியோர்') ||
-        requestText.includes('பராமரிப்பு') ||
-        requestText.includes('நோயாளி') ||
-        requestText.includes('देखभाल') ||
-        requestText.includes('बुजुर्ग') ||
-        requestText.includes('मरीज')
-      ) {
-        resultIndex = 6
-      }
-
-      /*
-       * Driver
-       */
-      else if (
-        requestText.includes('driver') ||
-        requestText.includes('driving') ||
-        requestText.includes('car') ||
-        requestText.includes('ride') ||
-        requestText.includes('டிரைவர்') ||
-        requestText.includes('ஓட்டுநர்') ||
-        requestText.includes('பயணம்') ||
-        requestText.includes('ड्राइवर') ||
-        requestText.includes('गाड़ी') ||
-        requestText.includes('यात्रा')
-      ) {
-        resultIndex = 7
-      }
-
-      /*
-       * Laundry / garment care
-       */
-      else if (
-        requestText.includes('laundry') ||
-        requestText.includes('clothes') ||
-        requestText.includes('shirt') ||
-        requestText.includes('trouser') ||
-        requestText.includes('dress') ||
-        requestText.includes('wash') ||
-        requestText.includes('dry clean') ||
-        requestText.includes('iron') ||
-        requestText.includes('சலவை') ||
-        requestText.includes('ஆடைகள்') ||
-        requestText.includes('துணி') ||
-        requestText.includes('சுத்தம் செய்ய') ||
-        requestText.includes('லாண்ட்ரி') ||
-        requestText.includes('कपड़े') ||
-        requestText.includes('लॉन्ड्री') ||
-        requestText.includes('धुलाई') ||
-        requestText.includes('इस्त्री')
-      ) {
-        resultIndex = 8
-      }
-
-      /*
-       * Urgent requests can still use the most
-       * relevant service category detected above.
-       */
-      const urgent =
-        requestText.includes('urgent') ||
-        requestText.includes('emergency') ||
-        requestText.includes('today') ||
-        requestText.includes('immediately') ||
-        requestText.includes('now') ||
-        requestText.includes('அவசரம்') ||
-        requestText.includes('அவசர') ||
-        requestText.includes('இன்று') ||
-        requestText.includes('உடனே') ||
-        requestText.includes('அவசரமாக') ||
-        requestText.includes('तुरंत') ||
-        requestText.includes('आपातकाल') ||
-        requestText.includes('आज') ||
-        requestText.includes('अभी')
-
-      const baseRecommendation = recommendations[resultIndex]
-      const translatedRecommendation =
-        translatedRecommendations[resultIndex]
-
-      setRecommendation({
-        ...baseRecommendation,
-        title: translatedRecommendation.title,
-        description: translatedRecommendation.description,
-        service: translatedRecommendation.service,
-        provider: translatedRecommendation.provider,
-        turnaround: urgent
-          ? language === 'ta'
-            ? 'அவசர சேவை கிடைக்கும்'
-            : language === 'hi'
-              ? 'आपातकालीन सेवा उपलब्ध'
-              : 'Priority service available'
-          : translatedRecommendation.turnaround,
+    try {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: trimmedMessage,
+          language,
+        }),
       })
 
+      const data = await response.json()
+
+      if (!response.ok || !data?.success) {
+        throw new Error(
+          data?.error || 'Gemini request failed.',
+        )
+      }
+
+      const serviceIndex = Number(
+        data?.result?.serviceIndex,
+      )
+
+      const urgent =
+        typeof data?.result?.urgent === 'boolean'
+          ? data.result.urgent
+          : isUrgentRequest(trimmedMessage)
+
+      if (
+        !Number.isInteger(serviceIndex) ||
+        serviceIndex < 0 ||
+        serviceIndex >= recommendations.length
+      ) {
+        throw new Error(
+          'Gemini returned an invalid service.',
+        )
+      }
+
+      showRecommendation(serviceIndex, urgent)
+    } catch (error) {
+      console.error(
+        'NeXa Link AI request failed:',
+        error,
+      )
+
+      /*
+       * Local fallback.
+       * If Gemini is temporarily unavailable, NeXa Link
+       * still provides a service recommendation.
+       */
+      const fallbackIndex =
+        getFallbackIndex(trimmedMessage)
+
+      const urgent =
+        isUrgentRequest(trimmedMessage)
+
+      showRecommendation(
+        fallbackIndex,
+        urgent,
+      )
+    } finally {
       setLoading(false)
-    }, 900)
+    }
   }
 
   return (
@@ -849,8 +907,14 @@ export function AIAssistant() {
                 {/* Loading */}
                 {loading && (
                   <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    initial={{
+                      opacity: 0,
+                      y: 5,
+                    }}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                    }}
                     className="mt-4 flex items-center gap-2 rounded-2xl bg-secondary/60 p-4"
                   >
                     <Sparkles className="h-4 w-4 animate-pulse text-primary" />

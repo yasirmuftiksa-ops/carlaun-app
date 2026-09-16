@@ -1,27 +1,32 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Check,
   CircleCheck,
   CircleDot,
+  CreditCard,
   FileText,
+  Landmark,
   MapPin,
   MessageCircle,
   PackageCheck,
   RotateCcw,
   ShieldCheck,
   ShoppingBag,
+  Smartphone,
   Star,
   Truck,
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 
 import { ORDER_STATUS_STEPS } from '@/lib/data'
 import { rupees } from '@/lib/format'
 import { useStore } from '@/lib/store'
 import { useLanguage } from '@/components/language-provider'
 import { ScreenHeader } from '@/components/screen-header'
+import { Modal } from '@/components/ui/modal'
 
 type Review = {
   rating: number
@@ -335,9 +340,23 @@ export function OrdersScreen() {
     navigate,
     reorder,
     toast,
+    processPayment,
+    getTransaction,
+    markPaymentFailed,
   } = useStore()
 
   const { language } = useLanguage()
+
+  const [paymentModalOpen, setPaymentModalOpen] =
+    useState(false)
+  const [selectedPaymentMethod, setSelectedPaymentMethod] =
+    useState<'UPI' | 'Card' | 'Net Banking'>('UPI')
+  const [paymentOrderId, setPaymentOrderId] =
+    useState<string | null>(null)
+  const [isProcessingPayment, setIsProcessingPayment] =
+    useState(false)
+  const [paymentState, setPaymentState] =
+    useState<'idle' | 'processing' | 'success' | 'failed'>('idle')
 
   const [reviews, setReviews] =
     useState<Reviews>({})
@@ -639,6 +658,62 @@ export function OrdersScreen() {
     )
   }
 
+  const paymentOrder =
+    orders.find(
+      (order) => order.id === paymentOrderId,
+    ) ?? null
+
+  const paymentAmount =
+    paymentOrder?.total ?? 0
+
+  const paymentTransaction =
+    paymentOrderId
+      ? getTransaction(paymentOrderId)
+      : undefined
+
+  const closePaymentModal = () => {
+    if (isProcessingPayment) return
+    setPaymentModalOpen(false)
+    setPaymentState('idle')
+    setIsProcessingPayment(false)
+    setPaymentOrderId(null)
+  }
+
+  const handleDemoPayment = async (
+    shouldFail = false,
+  ) => {
+    if (!paymentOrder) return
+
+    const isAlreadyPaid =
+      paymentOrder.paymentStatus === 'paid' ||
+      paymentOrder.paymentDetails?.status === 'paid'
+
+    if (isAlreadyPaid) {
+      closePaymentModal()
+      return
+    }
+
+    setIsProcessingPayment(true)
+    setPaymentState('processing')
+
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 1500)
+    })
+
+    const completed = shouldFail
+      ? markPaymentFailed(paymentOrder.id)
+      : await processPayment(paymentOrder.id)
+
+    setIsProcessingPayment(false)
+
+    if (completed) {
+      setPaymentState('success')
+      return
+    }
+
+    setPaymentState('failed')
+  }
+
   const openReviewForm = (
     orderId: string,
   ) => {
@@ -686,13 +761,254 @@ export function OrdersScreen() {
   }
 
   return (
-    <div className="min-h-dvh bg-background pb-24">
-      <ScreenHeader
-        title={t.title}
-        showBack={false}
-      />
+    <>
+      <Modal
+        open={paymentModalOpen}
+        onClose={closePaymentModal}
+        title="Pay for your order"
+        size="lg"
+      >
+        {paymentOrder && (
+          <div className="space-y-5 pb-2 pt-1">
+            <div className="rounded-2xl border border-primary/15 bg-primary/[0.05] p-4">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-muted-foreground">
+                Order
+              </p>
+              <p className="mt-2 font-mono text-lg font-black text-foreground">
+                #{paymentOrder.id}
+              </p>
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2">
+                <span className="text-xs text-muted-foreground">
+                  Amount
+                </span>
+                <span className="font-display text-xl font-black text-primary">
+                  {rupees(paymentOrder.total)}
+                </span>
+              </div>
+            </div>
 
-      {orders.length === 0 ? (
+            {paymentState === 'idle' && (
+              <div className="space-y-3">
+                <p className="text-sm font-extrabold text-foreground">
+                  Payment Method
+                </p>
+
+                <div className="space-y-2.5">
+                  {[
+                    { id: 'UPI', label: 'UPI', icon: Smartphone },
+                    { id: 'Card', label: 'Card', icon: CreditCard },
+                    { id: 'Net Banking', label: 'Net Banking', icon: Landmark },
+                  ].map((method) => {
+                    const Icon = method.icon
+                    const active = selectedPaymentMethod === method.id
+
+                    return (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setSelectedPaymentMethod(method.id as 'UPI' | 'Card' | 'Net Banking')}
+                        className={`flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all ${
+                          active
+                            ? 'border-primary bg-primary/[0.05] text-primary'
+                            : 'border-border bg-card text-foreground hover:border-primary/25'
+                        }`}
+                      >
+                        <span className="flex size-10 items-center justify-center rounded-xl bg-secondary text-foreground">
+                          <Icon className="size-4" />
+                        </span>
+                        <span className="flex-1 text-sm font-bold">
+                          {method.label}
+                        </span>
+                        <span
+                          className={`flex size-5 items-center justify-center rounded-full border-2 ${
+                            active ? 'border-primary bg-primary' : 'border-border'
+                          }`}
+                        >
+                          {active && <Check className="size-3 text-primary-foreground" />}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {selectedPaymentMethod === 'UPI' && paymentState !== 'success' && paymentState !== 'failed' && (
+              <div className="rounded-3xl border border-primary/15 bg-secondary/40 p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <span className="rounded-full bg-primary/10 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-primary">
+                    Demo Payment
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Demo QR — No Real Payment
+                  </span>
+                </div>
+
+                <div className="rounded-2xl border border-dashed border-border bg-background p-3 text-center">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-muted-foreground">
+                    Scan to Pay
+                  </p>
+                  <p className="mt-2 font-display text-3xl font-black text-foreground">
+                    {rupees(paymentOrder.total)}
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    UPI ID: nexaLink@demo
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Order: #{paymentOrder.id}
+                  </p>
+                  <div className="mt-4 flex min-h-[220px] items-center justify-center rounded-2xl border-2 border-primary/20 bg-white p-4 shadow-sm">
+                    <QRCodeSVG
+                      value={`upi://pay?pa=nexalink@demo&pn=NeXa%20Link&am=${paymentOrder.total}&cu=INR&tn=${paymentOrder.id}`}
+                      size={200}
+                      marginSize={4}
+                      bgColor="#ffffff"
+                      fgColor="#111827"
+                      level="M"
+                      className="block h-[200px] w-[200px]"
+                      aria-label={`Demo UPI QR code for order ${paymentOrder.id}`}
+                    />
+                  </div>
+                </div>
+
+                <p className="mt-3 text-center text-xs leading-relaxed text-muted-foreground">
+                  Demo payment only. No real money will be charged.
+                </p>
+              </div>
+            )}
+
+            {selectedPaymentMethod !== 'UPI' && paymentState !== 'success' && paymentState !== 'failed' && (
+              <div className="rounded-2xl border border-border bg-secondary/40 p-4 text-center">
+                <p className="text-sm font-extrabold text-foreground">
+                  {selectedPaymentMethod} Payment
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  Demo payment only. Please confirm to continue.
+                </p>
+              </div>
+            )}
+
+            {paymentState === 'processing' && (
+              <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 text-center">
+                <p className="text-sm font-extrabold text-foreground">
+                  Processing payment...
+                </p>
+              </div>
+            )}
+
+            {paymentState === 'success' && (
+              <div className="space-y-4 rounded-2xl border border-primary/20 bg-primary/[0.05] p-4 text-center">
+                <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Check className="size-6" />
+                </div>
+                <div>
+                  <p className="text-xl font-black text-foreground">
+                    Payment Successful
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Payment received successfully.
+                  </p>
+                </div>
+                <div className="space-y-2 rounded-2xl border border-border bg-card p-3 text-left text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Amount Paid</span>
+                    <span className="font-bold text-foreground">
+                      {rupees(paymentOrder.total)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Transaction ID</span>
+                    <span className="font-mono text-xs font-bold text-foreground">
+                      {paymentTransaction?.id ?? 'NXL-TXN-PENDING'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Payment Method</span>
+                    <span className="font-bold text-foreground">
+                      {selectedPaymentMethod}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closePaymentModal()
+                    navigate({ name: 'invoice', orderId: paymentOrder.id })
+                  }}
+                  className="w-full rounded-full bg-primary px-4 py-3 text-sm font-extrabold text-primary-foreground"
+                >
+                  View Invoice
+                </button>
+              </div>
+            )}
+
+            {paymentState === 'failed' && (
+              <div className="space-y-4 rounded-2xl border border-destructive/20 bg-destructive/[0.04] p-4 text-center">
+                <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                  <Check className="size-6" />
+                </div>
+                <div>
+                  <p className="text-xl font-black text-foreground">
+                    Payment Failed
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Payment could not be completed. Please try again.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPaymentState('idle')}
+                  className="w-full rounded-full bg-primary px-4 py-3 text-sm font-extrabold text-primary-foreground"
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+
+            {paymentState !== 'success' && paymentState !== 'failed' && (
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => void handleDemoPayment(false)}
+                  disabled={isProcessingPayment}
+                  className="w-full rounded-full bg-primary px-4 py-3 text-sm font-extrabold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isProcessingPayment
+                    ? 'Processing payment...'
+                    : selectedPaymentMethod === 'UPI'
+                      ? 'I Have Paid'
+                      : 'Confirm Demo Payment'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleDemoPayment(true)}
+                  disabled={isProcessingPayment}
+                  className="w-full rounded-full border border-border bg-card px-4 py-3 text-sm font-bold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Demo Failure
+                </button>
+
+                <button
+                  type="button"
+                  onClick={closePaymentModal}
+                  className="w-full rounded-full border border-border bg-card px-4 py-3 text-sm font-bold text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <div className="min-h-dvh bg-background pb-24">
+        <ScreenHeader
+          title={t.title}
+          showBack={false}
+        />
+
+        {orders.length === 0 ? (
         <div className="flex min-h-[70dvh] flex-col items-center justify-center px-6 py-24 text-center">
           <motion.div
             initial={{
@@ -786,6 +1102,19 @@ export function OrdersScreen() {
             const isEmergency =
               order.bookingType ===
               'emergency'
+
+            const isPaid =
+              order.paymentStatus === 'paid' ||
+              order.paymentDetails?.status === 'paid'
+            const isPaymentFailed =
+              order.paymentStatus === 'failed' ||
+              order.paymentDetails?.status === 'failed'
+            const isCashPending =
+              order.paymentDetails?.method === 'Cash on Delivery' &&
+              !isPaid
+            const canPayNow =
+              !isPaid &&
+              !isCashPending
 
             const primaryServiceName =
               order.services[0]
@@ -1182,9 +1511,31 @@ export function OrdersScreen() {
                           ? t.service
                           : t.services}
                       </p>
+                      <p className={`mt-1 text-[10px] font-extrabold ${isPaid ? 'text-primary' : isPaymentFailed ? 'text-destructive' : isCashPending ? 'text-accent' : 'text-accent'}`}>
+                        Payment: {isPaid ? 'PAID' : isPaymentFailed ? 'FAILED' : isCashPending ? 'CASH PENDING' : 'PENDING'}
+                      </p>
+                      {isPaid && order.transactionId && (
+                        <p className="mt-1 text-[10px] font-mono text-muted-foreground">
+                          TXN: {order.transactionId}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap justify-end gap-2">
+                      {!isPaid && !isCashPending && (
+                        <button
+                          onClick={() => {
+                            setPaymentOrderId(order.id)
+                            setSelectedPaymentMethod('UPI')
+                            setPaymentState('idle')
+                            setPaymentModalOpen(true)
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-[11px] font-extrabold text-primary-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]"
+                        >
+                          Pay Now
+                        </button>
+                      )}
+
                       <button
                         onClick={() => {
                           reorder(order.id)
@@ -1203,21 +1554,19 @@ export function OrdersScreen() {
                         {t.reorder}
                       </button>
 
-                      {delivered && (
-                        <button
-                          onClick={() =>
-                            navigate({
-                              name: 'invoice',
-                              orderId:
-                                order.id,
-                            })
-                          }
-                          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3.5 py-2 text-[11px] font-bold text-foreground transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
-                        >
-                          <FileText className="size-3.5" />
-                          {t.invoice}
-                        </button>
-                      )}
+                      <button
+                        onClick={() =>
+                          navigate({
+                            name: 'invoice',
+                            orderId:
+                              order.id,
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3.5 py-2 text-[11px] font-bold text-foreground transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
+                      >
+                        <FileText className="size-3.5" />
+                        {t.invoice}
+                      </button>
 
                       <button
                         onClick={() =>
@@ -1447,5 +1796,6 @@ export function OrdersScreen() {
         </div>
       )}
     </div>
+    </>
   )
 }

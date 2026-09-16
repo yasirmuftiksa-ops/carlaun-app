@@ -21,12 +21,15 @@ export function InvoiceScreen({
   orderId: string
 }) {
   const { getOrder, back } = useStore()
-  const { language } = useLanguage()
+  const { language, t: translation } = useLanguage()
 
   const [customerName, setCustomerName] =
     useState('NeXa Link Customer')
 
   const order = getOrder(orderId)
+  const isPaid =
+    order?.paymentStatus === 'paid' ||
+    order?.paymentDetails?.status === 'paid'
 
   const t = {
     en: {
@@ -303,7 +306,9 @@ export function InvoiceScreen({
 
               <div>
                 <p className="text-sm font-extrabold text-foreground">
-                  {content.paymentSuccessful}
+                  {isPaid
+                    ? translation.common.paymentSuccessful
+                    : translation.common.paymentPending}
                 </p>
 
                 <p className="mt-0.5 text-xs text-muted-foreground">
@@ -312,10 +317,16 @@ export function InvoiceScreen({
                     {order.payment}
                   </span>
                 </p>
+
+                {isPaid && order.transactionId && (
+                  <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                    {translation.common.transactionId}: {order.transactionId}
+                  </p>
+                )}
               </div>
 
-              <span className="ml-auto hidden rounded-full bg-primary/10 px-3 py-1.5 text-[9px] font-extrabold text-primary sm:inline-flex">
-                PAID
+              <span className={`ml-auto hidden rounded-full px-3 py-1.5 text-[9px] font-extrabold sm:inline-flex ${isPaid ? 'bg-primary/10 text-primary' : 'bg-accent/10 text-accent'}`}>
+                {isPaid ? translation.common.paid : translation.common.pending}
               </span>
             </div>
           </div>

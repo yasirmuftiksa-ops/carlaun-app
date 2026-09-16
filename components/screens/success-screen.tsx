@@ -1,20 +1,39 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Check, MapPin, Truck } from 'lucide-react'
+import { Check, Clock3, MapPin, Truck } from 'lucide-react'
 import { rupees } from '@/lib/format'
 import { useStore } from '@/lib/store'
+import { useLanguage } from '@/components/language-provider'
 
 export function SuccessScreen({ orderId }: { orderId: string }) {
-  const { getOrder, navigate } = useStore()
+  const { getOrder, navigate, processPayment, toast } = useStore()
+  const { t } = useLanguage()
   const order = getOrder(orderId)
+  const [processing, setProcessing] = useState(false)
 
   useEffect(() => {
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 })
   }, [])
 
   if (!order) return null
+
+  const isPaid =
+    order.paymentStatus === 'paid' ||
+    order.paymentDetails?.status === 'paid'
+
+  async function handlePayment() {
+    if (processing || isPaid) return
+
+    setProcessing(true)
+    const completed = await processPayment(orderId)
+    setProcessing(false)
+
+    if (!completed) {
+      toast('Payment already completed.', 'info')
+    }
+  }
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -36,7 +55,11 @@ export function SuccessScreen({ orderId }: { orderId: string }) {
             animate={{ scale: 1 }}
             transition={{ delay: 0.25, type: 'spring', stiffness: 300 }}
           >
-            <Check className="h-11 w-11 text-primary-foreground" strokeWidth={3} />
+            {isPaid ? (
+              <Check className="h-11 w-11 text-primary-foreground" strokeWidth={3} />
+            ) : (
+              <Clock3 className="h-10 w-10 text-primary-foreground" />
+            )}
           </motion.div>
         </motion.div>
 
@@ -46,7 +69,7 @@ export function SuccessScreen({ orderId }: { orderId: string }) {
           transition={{ delay: 0.35 }}
           className="mt-6 font-display text-2xl font-bold tracking-tight text-foreground"
         >
-          Pickup Scheduled!
+          {isPaid ? t.common.paymentSuccessful : t.common.paymentPending}
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: 10 }}
@@ -54,7 +77,9 @@ export function SuccessScreen({ orderId }: { orderId: string }) {
           transition={{ delay: 0.42 }}
           className="mt-1.5 text-pretty text-sm text-muted-foreground"
         >
-          Your NeXa Link partner will collect everything in a single trip.
+          {isPaid
+            ? t.common.invoice
+            : t.common.paymentPending}
         </motion.p>
 
         {/* Order card */}
@@ -104,27 +129,58 @@ export function SuccessScreen({ orderId }: { orderId: string }) {
           </div>
 
           <div className="mt-4 flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Total Paid</span>
+            <span className="text-sm text-muted-foreground">
+              {isPaid ? t.common.paid : t.common.amount}
+            </span>
             <span className="font-display text-lg font-bold text-foreground">
               {rupees(order.total)}
             </span>
           </div>
+
+          <div className="mt-3 flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">{t.common.payment}</span>
+            <span className={`font-bold ${isPaid ? 'text-primary' : 'text-accent'}`}>
+              {isPaid ? 'PAID' : order.paymentDetails?.method === 'Cash on Delivery' ? 'CASH PENDING' : 'PENDING'}
+            </span>
+          </div>
+
+          {isPaid && order.transactionId && (
+            <div className="mt-2 flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">{t.common.transactionId}</span>
+              <span className="font-mono font-bold text-foreground">{order.transactionId}</span>
+            </div>
+          )}
         </motion.div>
       </div>
 
       {/* Actions */}
       <div className="sticky bottom-0 space-y-2.5 border-t border-border bg-card/95 px-4 py-4 backdrop-blur">
+        {!isPaid && order.paymentDetails?.method !== 'Cash on Delivery' && (
+          <button
+            onClick={handlePayment}
+            disabled={processing}
+            className="w-full rounded-full bg-primary py-3.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {processing ? t.common.processing : `${t.common.payment} ${rupees(order.total)}`}
+          </button>
+        )}
         <button
-          onClick={() => navigate({ name: 'tracking', orderId: order.id })}
-          className="w-full rounded-full bg-primary py-3.5 text-sm font-semibold text-primary-foreground"
+          onClick={() => navigate({ name: 'orders' })}
+          className="w-full rounded-full border border-border py-3.5 text-sm font-semibold text-foreground"
         >
-          Track Order
+          {t.orders.orderDetails}
+        </button>
+        <button
+          onClick={() => navigate({ name: 'invoice', orderId: order.id })}
+          className="w-full rounded-full border border-border py-3.5 text-sm font-semibold text-foreground"
+        >
+          {t.common.invoice}
         </button>
         <button
           onClick={() => navigate({ name: 'home' })}
-          className="w-full rounded-full border border-border py-3.5 text-sm font-semibold text-foreground"
+          className="w-full rounded-full bg-secondary py-3.5 text-sm font-semibold text-foreground"
         >
-          Back to Home
+          {t.common.continue}
         </button>
       </div>
     </div>

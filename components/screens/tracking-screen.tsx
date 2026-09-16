@@ -16,7 +16,9 @@ import {
 import { ORDER_STATUS_STEPS } from '@/lib/data'
 import { rupees } from '@/lib/format'
 import { useStore } from '@/lib/store'
+import { DELIVERY_JOURNEY_STAGES } from '@/lib/store'
 import { ScreenHeader } from '@/components/screen-header'
+import { useLanguage } from '@/components/language-provider'
 
 type ProviderWorkflowStatus =
   | 'assigned'
@@ -35,6 +37,14 @@ type ExtendedOrder = {
   providerName?: string
   providerNames?: Record<string, string>
   providerIds?: Record<string, string>
+}
+
+function getWorkflowFromJourney(stage: string): ProviderWorkflowStatus {
+  if (stage === 'DRIVER_EN_ROUTE' || stage === 'NEAR_CUSTOMER') return 'on-the-way'
+  if (stage === 'ARRIVED_CUSTOMER' || stage === 'PICKUP_COMPLETED') return 'arrived'
+  if (stage === 'SERVICE_STARTED' || stage === 'SERVICE_COMPLETED') return 'work-started'
+  if (stage === 'DELIVERED') return 'completed'
+  return 'assigned'
 }
 
 const WORKFLOW_STEPS: {
@@ -72,6 +82,17 @@ const WORKFLOW_STEPS: {
     label: 'Service Completed',
     description: 'The service has been completed successfully.',
   },
+]
+
+const LIVE_STEPS = [
+  'Driver assigned', 'Driver coming to pickup', 'Driver arrived', 'Items picked up',
+  'Reached shop', 'Service in progress', 'Service completed', 'Returning to you', 'Delivered',
+]
+const LIVE_MESSAGES = [
+  'A driver has been assigned to your order.', 'Your driver is on the way to pick up your items.',
+  'Your driver is arriving soon.', 'Your driver has arrived at your pickup location.',
+  'Your items have been picked up successfully.', 'Your items have reached the service shop.',
+  'Your service has started.', 'Your service has been completed.', 'Your order has been delivered successfully.',
 ]
 
 function getWorkflowIndex(
@@ -173,61 +194,29 @@ export function TrackingScreen({
   const {
     getOrder,
     navigate,
+    getDeliveryJourney,
+    initializeDeliveryJourney,
+    advanceDeliveryJourney,
+    resetDeliveryJourney,
   } = useStore()
+  const { t } = useLanguage()
 
   const order = getOrder(orderId)
 
-  const [workflowStates, setWorkflowStates] =
-    useState<ProviderWorkflowState>({})
+  const workflowSteps = [
+    { id: 'assigned', label: t.tracking.providerAssigned, description: t.tracking.providerAssigned },
+    { id: 'accepted', label: t.tracking.jobAccepted, description: t.tracking.jobAccepted },
+    { id: 'on-the-way', label: t.tracking.onTheWay, description: t.tracking.onTheWay },
+    { id: 'arrived', label: t.tracking.providerArrived, description: t.tracking.providerArrived },
+    { id: 'work-started', label: t.tracking.workStarted, description: t.tracking.workStarted },
+    { id: 'completed', label: t.tracking.serviceCompleted, description: t.tracking.serviceCompleted },
+  ]
+
+  const journey = getDeliveryJourney(orderId)
 
   useEffect(() => {
-    const loadWorkflowStates = () => {
-      try {
-        const saved = localStorage.getItem(
-          'nexa_link_provider_workflows',
-        )
-
-        if (saved) {
-          setWorkflowStates(JSON.parse(saved))
-        } else {
-          setWorkflowStates({})
-        }
-      } catch {
-        setWorkflowStates({})
-      }
-    }
-
-    loadWorkflowStates()
-
-    const handleStorage = (
-      event: StorageEvent,
-    ) => {
-      if (
-        event.key ===
-        'nexa_link_provider_workflows'
-      ) {
-        loadWorkflowStates()
-      }
-    }
-
-    window.addEventListener(
-      'storage',
-      handleStorage,
-    )
-
-    const interval = window.setInterval(
-      loadWorkflowStates,
-      1000,
-    )
-
-    return () => {
-      window.removeEventListener(
-        'storage',
-        handleStorage,
-      )
-      window.clearInterval(interval)
-    }
-  }, [])
+    if (order && !journey) initializeDeliveryJourney(orderId)
+  }, [initializeDeliveryJourney, journey, order, orderId])
 
   const extendedOrder =
     order as
@@ -238,14 +227,14 @@ export function TrackingScreen({
     () =>
       order
         ? getWorkflowStatus(
-            workflowStates,
+            journey ? { [order.id]: getWorkflowFromJourney(journey.stage) } : {},
             order.id,
             order.status,
           )
         : 'assigned',
     [
       order,
-      workflowStates,
+      journey,
     ],
   )
 
@@ -302,7 +291,7 @@ export function TrackingScreen({
     order.status === 'delivered'
 
   const statusLabel =
-    WORKFLOW_STEPS[workflowIndex]?.label ??
+    workflowSteps[workflowIndex]?.label ??
     ORDER_STATUS_STEPS[orderStatusIndex]?.label ??
     order.status
 
@@ -312,16 +301,34 @@ export function TrackingScreen({
       ? `${order.latitude},${order.longitude}`
       : addressText
 
+  const journeyStep = journey
+    ? DELIVERY_JOURNEY_STAGES.indexOf(journey.stage)
+    : 0
+  const journeySteps = [
+    t.tracking.driverAssigned,
+    t.tracking.driverComing,
+    t.tracking.nearCustomer,
+    t.tracking.driverArrived,
+    t.tracking.itemsPicked,
+    t.tracking.goingToServiceCenter,
+    t.tracking.reachedShop,
+    t.tracking.serviceInProgress,
+    t.tracking.serviceCompleted,
+    t.tracking.returning,
+    t.tracking.almostAtLocation,
+    t.tracking.delivered,
+  ]
+
   return (
     <div className="min-h-dvh bg-background pb-28">
-      <ScreenHeader title="Live Tracking" />
+      <ScreenHeader title={t.orders.trackOrder} />
 
       {/* Order header */}
       <div className="border-b border-border bg-card px-4 py-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Order
+              {t.orders.orderDetails}
             </p>
 
             <p className="mt-0.5 font-mono text-lg font-bold text-foreground">
@@ -350,11 +357,11 @@ export function TrackingScreen({
 
             <div>
               <p className="text-xs font-bold text-destructive">
-                Emergency Priority
+                {t.safety.emergency}
               </p>
 
               <p className="text-[11px] text-muted-foreground">
-                Your request is receiving priority dispatch.
+                {t.safety.dispatch}
               </p>
             </div>
           </div>
@@ -362,6 +369,17 @@ export function TrackingScreen({
       </div>
 
       <div className="space-y-4 px-4 py-4">
+        <div className="overflow-hidden rounded-2xl border border-primary/20 bg-card">
+          <div className="flex items-center justify-between px-4 pt-4"><div><p className="text-xs font-bold uppercase tracking-wide text-primary">{t.tracking.startLive}</p><p className="mt-1 text-sm font-bold text-foreground">{journeySteps[journeyStep]}</p></div><span className="rounded-full bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">ETA ~{journey?.etaMinutes ?? 12} min</span></div>
+          <div className="relative mx-4 mt-4 h-44 overflow-hidden rounded-xl bg-gradient-to-br from-primary/10 via-secondary to-primary/5">
+            <div className="absolute left-8 right-8 top-1/2 h-1 -translate-y-1/2 rounded bg-primary/35" />
+            <div className="absolute left-7 top-[calc(50%-18px)] text-lg">🏠</div><div className="absolute right-7 top-[calc(50%-18px)] text-lg">🏪</div>
+            <motion.div className="absolute top-[calc(50%-17px)] text-xl" animate={{ left: `${12 + (journeyStep / (DELIVERY_JOURNEY_STAGES.length - 1)) * 70}%` }} transition={{ ease: 'linear', duration: .35 }}>🚗</motion.div>
+            <p className="absolute bottom-3 left-3 rounded bg-card/90 px-2 py-1 text-[10px] font-semibold text-foreground">{t.tracking.demoMode} · Live location — Demo simulation</p>
+          </div>
+            <div className="grid grid-cols-2 gap-2 p-4"><button type="button" disabled={isCompleted} onClick={() => advanceDeliveryJourney(orderId)} className="rounded-lg bg-primary px-2 py-2 text-[11px] font-bold text-primary-foreground">{t.tracking.simulateNextStep}</button><button type="button" onClick={() => resetDeliveryJourney(orderId)} className="rounded-lg bg-secondary px-2 py-2 text-[11px] font-bold text-foreground">{t.tracking.reset}</button></div>
+        </div>
+
         {/* Provider card */}
         <motion.div
           initial={{
@@ -391,12 +409,12 @@ export function TrackingScreen({
 
                 <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold text-primary">
                   <ShieldCheck className="h-3 w-3" />
-                  VERIFIED
+                  {t.certification.verified}
                 </span>
               </div>
 
               <p className="mt-1 text-xs text-muted-foreground">
-                NeXa Link service provider
+                {t.provider.dashboard}
               </p>
 
               <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-foreground">
@@ -415,7 +433,7 @@ export function TrackingScreen({
               className="flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-semibold text-foreground"
             >
               <Navigation className="h-3.5 w-3.5" />
-              Open Maps
+              {t.tracking.currentLocation}
             </button>
 
             <button
@@ -429,7 +447,7 @@ export function TrackingScreen({
               className="flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-semibold text-foreground"
             >
               <Phone className="h-3.5 w-3.5" />
-              Contact Support
+              {t.welfare.contactSupport}
             </button>
           </div>
         </motion.div>
@@ -458,7 +476,7 @@ export function TrackingScreen({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wide text-primary">
-                    Live Service Status
+                    {t.tracking.serviceInProgress}
                   </p>
 
                   <p className="mt-1 text-sm font-bold text-foreground">
@@ -485,16 +503,16 @@ export function TrackingScreen({
         <div className="rounded-2xl border border-border bg-card p-4">
           <div className="mb-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Provider Journey
+              {t.provider.dashboard}
             </p>
 
             <h2 className="mt-1 font-display text-lg font-bold text-foreground">
-              Track every service step
+              {t.tracking.serviceCompleted}
             </h2>
           </div>
 
           <div className="space-y-0">
-            {WORKFLOW_STEPS.map(
+            {workflowSteps.map(
               (step, index) => {
                 const completed =
                   index < workflowIndex ||
