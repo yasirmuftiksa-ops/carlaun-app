@@ -361,6 +361,24 @@ export interface CooperativeEarning {
   createdAt: number
 }
 
+export type WelfareClaimStatus =
+  | 'pending'
+  | 'under-review'
+  | 'approved'
+  | 'paid'
+
+export interface WelfareClaim {
+  id: string
+  providerId: string
+  providerName: string
+  category: 'accident' | 'emergency' | 'medical' | 'training' | 'equipment'
+  amount: number
+  description: string
+  status: WelfareClaimStatus
+  createdAt: number
+  updatedAt: number
+}
+
 export interface Review {
   id: string
   orderId: string

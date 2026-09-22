@@ -24,6 +24,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { ORDER_STATUS_STEPS } from '@/lib/data'
 import { rupees } from '@/lib/format'
 import { useStore } from '@/lib/store'
+import { getVisibleWageBreakdown } from '@/lib/cooperative'
 import { useLanguage } from '@/components/language-provider'
 import { ScreenHeader } from '@/components/screen-header'
 import { Modal } from '@/components/ui/modal'
@@ -666,6 +667,15 @@ export function OrdersScreen() {
   const paymentAmount =
     paymentOrder?.total ?? 0
 
+  const paymentBreakdown = paymentOrder
+    ? getVisibleWageBreakdown({
+        customerPayment: paymentOrder.total,
+        serviceName: paymentOrder.services[0]?.serviceName ?? 'Service',
+        distanceKm: 4,
+        emergency: paymentOrder.priority === 'emergency' || paymentOrder.bookingType === 'emergency',
+      })
+    : null
+
   const paymentTransaction =
     paymentOrderId
       ? getTransaction(paymentOrderId)
@@ -830,6 +840,33 @@ export function OrdersScreen() {
                     )
                   })}
                 </div>
+              </div>
+            )}
+
+            {paymentBreakdown && (
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-muted-foreground">
+                    Fair Wage Breakdown
+                  </p>
+                  <span className={`rounded-full px-2 py-1 text-[9px] font-bold ${paymentBreakdown.compliant ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'}`}>
+                    {paymentBreakdown.compliant ? 'Compliant' : 'Needs Review'}
+                  </span>
+                </div>
+
+                <div className="mt-3 space-y-2 text-xs">
+                  <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Customer payment</span><span className="font-bold text-foreground">{rupees(paymentBreakdown.customerPayment)}</span></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Worker payout</span><span className="font-bold text-primary">{rupees(paymentBreakdown.workerPayout)}</span></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Co-op contribution</span><span className="font-bold text-foreground">{rupees(paymentBreakdown.cooperativeContribution)}</span></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Welfare contribution</span><span className="font-bold text-foreground">{rupees(paymentBreakdown.welfareContribution)}</span></div>
+                  <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Fair wage floor</span><span className="font-bold text-foreground">{rupees(paymentBreakdown.wageFloor)}</span></div>
+                </div>
+
+                {paymentBreakdown.warning && (
+                  <div className="mt-3 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-[10px] leading-relaxed text-destructive">
+                    {paymentBreakdown.warning}
+                  </div>
+                )}
               </div>
             )}
 

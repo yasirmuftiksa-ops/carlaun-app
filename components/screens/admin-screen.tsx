@@ -44,6 +44,7 @@ import type {
   Complaint,
   OrderStatus,
   Review,
+  WelfareClaim,
 } from '@/lib/types'
 
 import {
@@ -60,6 +61,7 @@ import {
   generateEmergencyDispatch,
   generateEmergencyInsights,
 } from '@/lib/emergency-dispatch'
+import { calculateFairAllocation, getVisibleWageBreakdown, getWageFloor } from '@/lib/cooperative'
 
 import {
   generateWorkerEarnings,
@@ -86,6 +88,11 @@ type AIDecisionCandidate = {
   available: boolean
   verified: boolean
   serviceMatch: boolean
+  fairnessScore: number
+  workload: number
+  recentJobs: number
+  allocationBalance: number
+  status: string
   reasons: string[]
 }
 
@@ -227,8 +234,14 @@ export function AdminScreen() {
   const [federationFilter, setFederationFilter] =
     useState<'all' | 'attention' | 'available' | 'pending'>('all')
 
+  const [allocationFilter, setAllocationFilter] =
+    useState<'all' | 'under-allocated' | 'balanced' | 'high-workload' | 'unavailable'>('all')
+
   const [federationActionLog, setFederationActionLog] =
     useState<FederationActionLog[]>([])
+
+  const [welfareClaims, setWelfareClaims] = useState<WelfareClaim[]>([])
+  const [demoScenario, setDemoScenario] = useState('default')
 
   useEffect(() => {
     const read = <T,>(key: string, fallback: T): T => {
@@ -258,6 +271,7 @@ export function AdminScreen() {
         [],
       ),
     )
+    setWelfareClaims(read<WelfareClaim[]>('nexa_link_welfare_claims', []))
   }, [])
 
   useEffect(() => {
@@ -270,6 +284,31 @@ export function AdminScreen() {
       // Demo persistence is best-effort.
     }
   }, [federationActionLog])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('nexa_link_welfare_claims', JSON.stringify(welfareClaims))
+    } catch {
+      // Demo persistence is best-effort.
+    }
+  }, [welfareClaims])
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem('nexa_link_demo_scenario')
+      if (stored) setDemoScenario(stored)
+    } catch {
+      // Demo scenario is optional and best-effort.
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('nexa_link_demo_scenario', demoScenario)
+    } catch {
+      // Demo scenario persistence is best-effort.
+    }
+  }, [demoScenario])
 
   /*
    * Cooperative member verification status.
@@ -325,118 +364,31 @@ export function AdminScreen() {
         service.id === aiTargetServiceId,
     ) ?? null
 
+  const allocationService = aiTargetService ?? SERVICES[0]
+
   const aiCandidates: AIDecisionCandidate[] =
-    PARTNERS.map((partner) => {
-      const serviceMatch =
-        aiTargetService !== null &&
-        partner.services
-          .toLowerCase()
-          .includes(
-            aiTargetService.name.toLowerCase(),
-          )
-
-      const trustScore =
-        getStoredTrustScore(
-          partner.id,
-          partner,
-        )
-
-      const distanceKm =
-        parseDistanceKm(partner.distance)
-
-      const distanceScore = Math.max(
-        0,
-        100 - distanceKm * 8,
-      )
-
-      const availabilityScore =
-        partner.available ? 100 : 20
-
-      const verificationScore =
-        partner.verified ? 100 : 25
-
-      const serviceScore =
-        serviceMatch ? 100 : 15
-
-      const ratingScore =
-        (partner.rating / 5) * 100
-
-      const workloadScore =
-        Math.max(
-          35,
-          100 -
-            Math.min(
-              65,
-              partner.completedJobs / 10,
-            ),
-        )
-
-      const score = Math.round(
-        serviceScore * 0.25 +
-          trustScore * 0.25 +
-          distanceScore * 0.15 +
-          availabilityScore * 0.15 +
-          verificationScore * 0.1 +
-          ratingScore * 0.05 +
-          workloadScore * 0.05,
-      )
-
-      const reasons: string[] = []
-
-      if (serviceMatch) {
-        reasons.push('skill match')
-      }
-
-      if (trustScore >= 90) {
-        reasons.push(
-          `trust ${trustScore}`,
-        )
-      } else if (trustScore >= 75) {
-        reasons.push(
-          `trust ${trustScore}`,
-        )
-      }
-
-      if (partner.verified) {
-        reasons.push('verified')
-      }
-
-      if (partner.available) {
-        reasons.push('available now')
-      }
-
-      if (distanceKm <= 3) {
-        reasons.push(
-          `${distanceKm.toFixed(1)} km away`,
-        )
-      } else if (distanceKm <= 6) {
-        reasons.push('nearby')
-      }
-
-      if (partner.rating >= 4.7) {
-        reasons.push('high rating')
-      }
-
-      if (
-        partner.completedJobs <= 100 &&
-        partner.available
-      ) {
-        reasons.push('healthy workload')
-      }
-
-      return {
-        providerId: partner.id,
-        providerName: partner.name,
-        score,
-        trustScore,
-        rating: partner.rating,
-        distanceKm,
-        available: partner.available,
-        verified: partner.verified,
-        serviceMatch,
-        reasons: reasons.slice(0, 5),
-      }
-    }).sort(
+    (allocationService
+      ? PARTNERS.map((partner) => {
+          const allocation = calculateFairAllocation(partner, allocationService, orders)
+          return {
+            providerId: allocation.providerId,
+            providerName: allocation.providerName,
+            score: allocation.score,
+            trustScore: allocation.trustScore,
+            rating: partner.rating,
+            distanceKm: allocation.distanceKm,
+            available: allocation.available,
+            verified: allocation.verified,
+            serviceMatch: allocation.serviceMatch,
+            fairnessScore: allocation.fairnessScore,
+            workload: allocation.workload,
+            recentJobs: allocation.recentJobs,
+            allocationBalance: allocation.allocationBalance,
+            status: allocation.status,
+            reasons: allocation.reasons.slice(0, 7),
+          }
+        })
+      : []).sort(
       (a, b) => b.score - a.score,
     )
 
@@ -490,6 +442,16 @@ export function AdminScreen() {
           'No verified and available provider currently matches this request.',
           'The cooperative should review capacity or move a worker into the service area.',
         ]
+
+  const aiWhyThisWorker = aiRecommendedProvider
+    ? [
+        `${aiRecommendedProvider.providerName} matches the required skill set and remains available for this booking.`,
+        `Their trust score is ${aiRecommendedProvider.trustScore}/100 and fairness score is ${aiRecommendedProvider.fairnessScore}/100, which keeps the assignment balanced and compliant.`,
+        `${aiRecommendedProvider.distanceKm.toFixed(1)} km away with a recent workload of ${aiRecommendedProvider.recentJobs} jobs, giving a safe coverage margin without overloading the worker.`,
+      ]
+    : [
+        'No verified provider is currently ideal for this service request, so the platform should rebalance capacity before assignment.',
+      ]
 
   const aiDecision: AIDecision = {
     orderId:
@@ -835,6 +797,44 @@ export function AdminScreen() {
     }
   })
 
+  const fairnessAllocations = (allocationService
+    ? PARTNERS.map((partner) => calculateFairAllocation(partner, allocationService, orders))
+    : [])
+
+  const filteredFairnessAllocations = fairnessAllocations.filter((allocation) =>
+    allocationFilter === 'all' || allocation.status === allocationFilter,
+  )
+
+  const fairnessAverage = fairnessAllocations.length
+    ? Math.round(fairnessAllocations.reduce((sum, allocation) => sum + allocation.allocationBalance, 0) / fairnessAllocations.length)
+    : 0
+  const fairnessUnderAllocated = fairnessAllocations.filter((allocation) => allocation.status === 'under-allocated').length
+  const fairnessHighWorkload = fairnessAllocations.filter((allocation) => allocation.status === 'high-workload').length
+  const fairnessEligible = fairnessAllocations.filter((allocation) => allocation.eligible).length
+  const fairnessAlerts = fairnessUnderAllocated + fairnessHighWorkload + fairnessAllocations.filter((allocation) => allocation.status === 'unavailable').length
+
+  const wageFloorRows = SERVICES.map((service) => {
+    const related = cooperativeEarnings.filter((earning) => earning.serviceName.includes(service.name))
+    const minimum = getWageFloor(service.name)
+    return { service: service.name, minimum, typical: related.length ? Math.round(related.reduce((sum, earning) => sum + earning.netEarnings, 0) / related.length) : 0 }
+  })
+  const wageJobsChecked = cooperativeEarnings.length
+  const wageJobsCompliant = cooperativeEarnings.filter((earning) => earning.netEarnings >= getWageFloor(earning.serviceName)).length
+  const pendingClaims = welfareClaims.filter((claim) => claim.status === 'pending' || claim.status === 'under-review').length
+  const paidClaims = welfareClaims.filter((claim) => claim.status === 'paid').reduce((sum, claim) => sum + claim.amount, 0)
+
+  const updateClaimStatus = (claim: WelfareClaim) => {
+    const nextStatus = claim.status === 'pending'
+      ? 'under-review'
+      : claim.status === 'under-review'
+        ? 'approved'
+        : claim.status === 'approved'
+          ? 'paid'
+          : 'paid'
+    setWelfareClaims((current) => current.map((item) => item.id === claim.id ? { ...item, status: nextStatus, updatedAt: Date.now() } : item))
+    recordFederationAction(`Welfare claim ${nextStatus}`, `${claim.providerName} · ${rupees(claim.amount)}`)
+  }
+
   const filteredMembers = PARTNERS.filter((partner) => {
     if (memberFilter === 'verified') return partner.verified
     if (memberFilter === 'pending') return !partner.verified
@@ -877,6 +877,25 @@ export function AdminScreen() {
   const welfareFund =
     cooperativeCommission * 0.35
 
+  const demoScenarioSummary = {
+    default: 'Standard cooperative operation',
+    'fair-wage-alert': 'Fair Wage Alert: worker payout below configured floor',
+    'emergency-booking': 'Emergency booking: priority dispatch and rapid support',
+    'ai-match': 'AI Match: best provider recommended with explainability',
+  } as const
+
+  const demoScenarioBadge = demoScenarioSummary[demoScenario as keyof typeof demoScenarioSummary] ?? demoScenarioSummary.default
+
+  const demoScenarioBreakdown = (() => {
+    const sampleOrderTotal = orders[0]?.total ?? 1400
+    return getVisibleWageBreakdown({
+      customerPayment: sampleOrderTotal,
+      serviceName: 'plumbing',
+      distanceKm: 4,
+      emergency: demoScenario === 'emergency-booking',
+    })
+  })()
+
   const filteredTransactions = transactions.filter((transaction) => {
     if (transactionFilter === 'all') return true
     if (transactionFilter === 'paid') return transaction.status === 'paid'
@@ -915,6 +934,7 @@ export function AdminScreen() {
     (sum, transaction) => sum + transaction.welfareContribution,
     0,
   )
+  const availableWelfareBalance = Math.max(0, transactionWelfareFund - paidClaims)
 
   const transactionStatusLabel = (status: string) => {
     if (status === 'paid') return t.common.paid
@@ -1354,310 +1374,265 @@ export function AdminScreen() {
       </div>
 
       {/* =================================================
-          DELIVERY SUMMARY
+          COOPERATIVE FEDERATION OVERVIEW
           ================================================= */}
 
-      <div className="px-4 pb-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/10 text-accent">
-                <Activity className="h-4 w-4" />
-              </div>
-
-              <div>
-                <div className="text-xs text-muted-foreground">
-              {/* =================================================
-                  COOPERATIVE FEDERATION OVERVIEW
-                  ================================================= */}
-
-              <section className="space-y-4 px-4 pb-5">
-                        <div className="rounded-2xl border border-primary/20 bg-card p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-xs font-bold uppercase tracking-wide text-primary">Live Operations</p>
-                              <h2 className="mt-1 font-display text-xl font-bold text-foreground">Active delivery journeys</h2>
-                            </div>
-                            <Truck className="h-5 w-5 text-primary" />
-                          </div>
-                          <div className="mt-3 space-y-2">
-                            {Object.values(deliveryJourneys)
-                              .filter((journey) => journey.stage !== 'DELIVERED')
-                              .map((journey) => {
-                                const order = orders.find((item) => item.id === journey.orderId)
-                                if (!order) return null
-                                const stageIndex = DELIVERY_JOURNEY_STAGES.indexOf(journey.stage)
-                                const label = journey.stage.replaceAll('_', ' ').toLowerCase().replace(/(^| )\w/g, (letter) => letter.toUpperCase())
-                                return (
-                                  <button key={journey.orderId} type="button" onClick={() => navigate({ name: 'tracking', orderId: journey.orderId })} className="w-full rounded-xl border border-border/70 bg-background p-3 text-left transition-colors hover:border-primary/40">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                      <span className="text-sm font-bold text-foreground">#{journey.orderId}</span>
-                                      <span className="rounded-full bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">{label}</span>
-                                    </div>
-                                    <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground sm:grid-cols-3 lg:grid-cols-6">
-                                      <span>Customer: {order.address.label}</span>
-                                      <span>Provider: {order.providerName ?? 'Assigned provider'}</span>
-                                      <span>Service: {order.services.map((service) => service.serviceName).join(', ')}</span>
-                                      <span>Driver: {journey.driverLocation.latitude.toFixed(4)}, {journey.driverLocation.longitude.toFixed(4)}</span>
-                                      <span>ETA: ~{journey.etaMinutes} min</span>
-                                      <span>Stage {stageIndex + 1}/{DELIVERY_JOURNEY_STAGES.length}</span>
-                                      <span>Updated {new Date(journey.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                    </div>
-                                  </button>
-                                )
-                              })}
-                            {Object.values(deliveryJourneys).every((journey) => journey.stage === 'DELIVERED') && <p className="py-3 text-xs text-muted-foreground">No active delivery journeys.</p>}
-                          </div>
-                        </div>
-
-                <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-                      <Building2 className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-primary">
-                        {t.admin.federation}
-                      </p>
-                      <h2 className="mt-1 font-display text-xl font-bold text-foreground">
-                        {t.admin.federationOverview}
-                      </h2>
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {t.home.subtitle}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-                  <Kpi label={t.admin.workers} value={String(PARTNERS.length)} icon={Users} />
-                  <Kpi label={t.admin.verifiedWorkers} value={String(verifiedWorkers)} icon={BadgeCheck} />
-                  <Kpi label={t.admin.pendingVerification} value={String(pendingVerification)} icon={Clock3} />
-                  <Kpi label={t.admin.activeWorkers} value={String(availableMembers)} icon={Activity} />
-                  <Kpi label={t.admin.activeBookings} value={String(activeCount)} icon={PackageCheck} />
-                  <Kpi label={t.admin.completedJobs} value={String(deliveredCount)} icon={CheckCircle2} />
-                  <Kpi label={t.admin.averageRating} value={averageRating ? `${averageRating.toFixed(1)}/5` : '—'} icon={StarIcon} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <FederationStat label={t.admin.customerPayments} value={rupees(revenue)} icon={IndianRupee} />
-                  <FederationStat label={t.common.workerEarnings} value={rupees(federationGrossEarnings)} icon={Wallet} />
-                  <FederationStat label={t.common.cooperativeContribution} value={rupees(cooperativeContributionTotal)} icon={Building2} />
-                  <FederationStat label={t.common.welfareContribution} value={rupees(welfareContributionTotal)} icon={HeartPulse} />
-                  <FederationStat label={t.admin.openComplaints} value={String(openComplaints)} icon={AlertTriangle} />
-                  <FederationStat label={t.admin.emergencyCases} value={String(emergencyDispatch.emergencyBookings)} icon={Zap} />
-                  <FederationStat label={t.admin.trustScore} value={`${averageTrustScore}/100`} icon={ShieldCheck} />
-                  <FederationStat label={t.admin.reviews} value={String(reviews.length)} icon={StarIcon} />
-                </div>
-
-                <div className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
-                  <div className="rounded-2xl border border-border bg-card p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-bold text-foreground">{t.admin.memberManagement}</p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">{t.admin.filterMembers}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {(['all', 'verified', 'pending', 'available', 'busy', 'emergency-ready'] as const).map((filter) => (
-                          <button
-                            key={filter}
-                            type="button"
-                            onClick={() => setMemberFilter(filter)}
-                            className={`rounded-full px-2.5 py-1.5 text-[9px] font-bold ${memberFilter === filter ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground'}`}
-                          >
-                            {filter === 'all'
-                              ? t.admin.allMembers
-                              : filter === 'verified'
-                                ? t.certification.verified
-                                : filter === 'pending'
-                                  ? t.certification.pending
-                                  : filter === 'available'
-                                    ? t.provider.online
-                                    : filter === 'busy'
-                                      ? t.admin.busy
-                                      : t.admin.emergencyReady}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 space-y-2">
-                      {filteredMembers.map((partner) => (
-                        <div key={partner.id} className="rounded-xl border border-border/70 bg-background p-3">
-                          <div className="flex items-start gap-3">
-                            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-xs font-bold text-primary">
-                              {partner.name.slice(0, 2)}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <p className="text-sm font-bold text-foreground">{partner.name}</p>
-                                <span className={`rounded-full px-2 py-1 text-[9px] font-bold ${partner.verified ? 'bg-primary/10 text-primary' : 'bg-accent/10 text-accent'}`}>
-                                  {partner.verified ? t.certification.verified : t.certification.pending}
-                                </span>
-                              </div>
-                              <p className="mt-1 truncate text-[11px] text-muted-foreground">{partner.services}</p>
-                              <div className="mt-2 flex flex-wrap gap-1.5 text-[9px] font-semibold text-muted-foreground">
-                                <span>{partner.available ? t.provider.online : t.admin.busy}</span>
-                                <span>{partner.rating.toFixed(1)} ★</span>
-                                <span>{partner.experience} {t.admin.experience.toLowerCase()}</span>
-                                <span>{partner.completedJobs} {t.admin.completedJobs.toLowerCase()}</span>
-                                <span>{t.admin.trustScore} {getStoredTrustScore(partner.id, partner)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {filteredMembers.length === 0 && <p className="py-5 text-center text-xs text-muted-foreground">{t.admin.noData}</p>}
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <FederationPanel title={t.admin.skillsCertification} icon={GraduationIcon}>
-                      <div className="grid grid-cols-2 gap-2">
-                        <FederationStat label={t.admin.certifiedWorkers} value={String(verifiedWorkers)} icon={BadgeCheck} />
-                        <FederationStat label={t.admin.trainingCompletion} value={String(trainingCompleted)} icon={CheckCircle2} />
-                        <FederationStat label={t.admin.training} value={String(trainingInProgress)} icon={BookIcon} />
-                        <FederationStat label={t.certification.certificateId} value={String(certificatesUnlocked)} icon={AwardIcon} />
-                      </div>
-                    </FederationPanel>
-
-                    <FederationPanel title={t.admin.workforceAvailability} icon={Users}>
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <FederationStat label={t.provider.online} value={String(availableMembers)} icon={Activity} />
-                        <FederationStat label={t.admin.busy} value={String(PARTNERS.length - availableMembers)} icon={Clock3} />
-                        <FederationStat label={t.admin.emergencyReadyWorkers} value={String(emergencyReadyPartners)} icon={Zap} />
-                      </div>
-                    </FederationPanel>
-
-                    <FederationPanel title={t.admin.fairPayMonitoring} icon={Scale}>
-                      <div className="grid grid-cols-2 gap-2">
-                        <FederationStat label={t.admin.highestScore} value={highestFairPay ? `${highestFairPay}/100` : '—'} icon={TrendingUp} />
-                        <FederationStat label={t.admin.lowestScore} value={lowestFairPay ? `${lowestFairPay}/100` : '—'} icon={TrendingDown} />
-                        <FederationStat label={t.admin.workersNeedingReview} value={String(workerNeedsReview)} icon={AlertTriangle} />
-                        <FederationStat label={t.common.fairPay} value={averageFairPayScore ? `${averageFairPayScore}/100` : '—'} icon={Scale} />
-                      </div>
-                    </FederationPanel>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <FederationPanel title={t.admin.bookingsOperations} icon={PackageCheck}>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      {ORDER_STATUS_STEPS.map((step) => (
-                        <FederationStat
-                          key={step.id}
-                          label={step.label}
-                          value={String(orders.filter((order) => order.status === step.id).length)}
-                          icon={step.id === 'delivered' ? CheckCircle2 : Activity}
-                        />
-                      ))}
-                    </div>
-                  </FederationPanel>
-
-                  <FederationPanel title={t.admin.customerFeedback} icon={StarIcon}>
-                    <div className="grid grid-cols-3 gap-2">
-                      <FederationStat label={t.admin.reviews} value={String(reviews.length)} icon={StarIcon} />
-                      <FederationStat label={t.admin.complaints} value={String(complaints.length)} icon={AlertTriangle} />
-                      <FederationStat label={t.admin.openComplaints} value={String(openComplaints)} icon={Clock3} />
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      {reviews.slice(-3).reverse().map((review) => (
-                        <div key={review.id} className="rounded-xl bg-secondary/60 p-3 text-xs">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-foreground">{review.rating.toFixed(1)} ★</span>
-                            <span className="text-[10px] text-muted-foreground">#{review.orderId}</span>
-                          </div>
-                          {review.comment && <p className="mt-1 text-muted-foreground">{review.comment}</p>}
-                        </div>
-                      ))}
-                      {reviews.length === 0 && <p className="text-xs text-muted-foreground">{t.admin.noData}</p>}
-                    </div>
-                  </FederationPanel>
-                </div>
-
-                <FederationPanel title={t.admin.serviceDemand} icon={TrendingUp}>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {servicePerformance.map((item) => (
-                      <div key={item.service.id} className="rounded-xl border border-border/70 p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-bold text-foreground">{item.service.name}</p>
-                          <span className="rounded-full bg-primary/10 px-2 py-1 text-[9px] font-bold text-primary">
-                            {item.demandLevel === 'high' ? t.admin.high : item.demandLevel === 'medium' ? t.admin.medium : t.admin.low}
-                          </span>
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px] text-muted-foreground">
-                          <span>{t.admin.currentBookings}: {item.bookings}</span>
-                          <span>{t.admin.completedJobs}: {item.completed}</span>
-                          <span>{t.admin.availableProviders}: {item.available}/{item.providers}</span>
-                          <span>{t.admin.capacity}: {item.capacity === 'shortage' ? t.admin.shortage : item.capacity === 'partial' ? t.admin.partial : t.admin.covered}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </FederationPanel>
-
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <FederationPanel title={t.admin.emergencyOperations} icon={Zap}>
-                    <div className="grid grid-cols-3 gap-2">
-                      <FederationStat label={t.admin.activeEmergencies} value={String(orders.filter((order) => order.bookingType === 'emergency' && order.status !== 'delivered').length)} icon={AlertTriangle} />
-                      <FederationStat label={t.admin.emergencyReadyWorkers} value={String(emergencyReadyPartners)} icon={ShieldCheck} />
-                      <FederationStat label={t.admin.emergencyCases} value={String(emergencyDispatch.emergencyBookings)} icon={Zap} />
-                    </div>
-                    <p className="mt-3 text-xs text-muted-foreground">{emergencyInsights[0] ?? t.admin.noData}</p>
-                  </FederationPanel>
-
-                  <FederationPanel title={t.admin.welfareInsurance} icon={HeartPulse}>
-                    <div className="rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
-                      <p className="font-bold text-foreground">{t.admin.dataInProviderPortal}</p>
-                      <p className="mt-1">{t.common.welfareContribution}: {rupees(welfareContributionTotal)}</p>
-                      <p className="mt-1">{t.admin.welfareInsurance}: {t.admin.dataInProviderPortal}</p>
-                    </div>
-                  </FederationPanel>
-                </div>
-
-                <FederationPanel title={t.admin.impact} icon={Sparkles}>
-                  <p className="text-sm leading-relaxed text-foreground">
-                    {t.common.appName} {t.admin.impact.toLowerCase()}: {workersWithEarnings} {t.admin.workersEarning.toLowerCase()} across {SERVICES.length} {t.admin.serviceCategories}.
-                  </p>
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <FederationStat label={t.admin.completedJobs} value={String(deliveredCount)} icon={CheckCircle2} />
-                    <FederationStat label={t.admin.workersTrained} value={String(trainingCompleted)} icon={BookIcon} />
-                    <FederationStat label={t.admin.workersCertified} value={String(verifiedWorkers)} icon={BadgeCheck} />
-                    <FederationStat label={t.admin.emergencyHandled} value={String(emergencyDispatch.emergencyBookings)} icon={Zap} />
-                  </div>
-                </FederationPanel>
-              </section>
-
-                  In Progress
-                </div>
-
-                <p className="font-display text-lg font-bold text-foreground">
-                  {activeCount}
-                </p>
-              </div>
+      <section className="space-y-4 px-4 pb-5">
+        <div className="rounded-2xl border border-primary/20 bg-card p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-primary">Live Operations</p>
+              <h2 className="mt-1 font-display text-xl font-bold text-foreground">Active delivery journeys</h2>
             </div>
+            <Truck className="h-5 w-5 text-primary" />
           </div>
+          <div className="mt-3 space-y-2">
+            {Object.values(deliveryJourneys)
+              .filter((journey) => journey.stage !== 'DELIVERED')
+              .map((journey) => {
+                const order = orders.find((item) => item.id === journey.orderId)
+                if (!order) return null
+                const stageIndex = DELIVERY_JOURNEY_STAGES.indexOf(journey.stage)
+                const label = journey.stage.replaceAll('_', ' ').toLowerCase().replace(/(^| )\w/g, (letter) => letter.toUpperCase())
+                return (
+                  <button key={journey.orderId} type="button" onClick={() => navigate({ name: 'tracking', orderId: journey.orderId })} className="w-full rounded-xl border border-border/70 bg-background p-3 text-left transition-colors hover:border-primary/40">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-sm font-bold text-foreground">#{journey.orderId}</span>
+                      <span className="rounded-full bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">{label}</span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground sm:grid-cols-3 lg:grid-cols-6">
+                      <span>Customer: {order.address.label}</span>
+                      <span>Provider: {order.providerName ?? 'Assigned provider'}</span>
+                      <span>Service: {order.services.map((service) => service.serviceName).join(', ')}</span>
+                      <span>Driver: {journey.driverLocation.latitude.toFixed(4)}, {journey.driverLocation.longitude.toFixed(4)}</span>
+                      <span>ETA: ~{journey.etaMinutes} min</span>
+                      <span>Stage {stageIndex + 1}/{DELIVERY_JOURNEY_STAGES.length}</span>
+                      <span>Updated {new Date(journey.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            {Object.values(deliveryJourneys).every((journey) => journey.stage === 'DELIVERED') && <p className="py-3 text-xs text-muted-foreground">No active delivery journeys.</p>}
+          </div>
+        </div>
 
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <CheckCircle2 className="h-4 w-4" />
-              </div>
-
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  Delivered
-                </p>
-
-                <p className="font-display text-lg font-bold text-foreground">
-                  {deliveredCount}
-                </p>
-              </div>
+        <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+              <Building2 className="size-5" />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-primary">
+                {t.admin.federation}
+              </p>
+              <h2 className="mt-1 font-display text-xl font-bold text-foreground">
+                {t.admin.federationOverview}
+              </h2>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {t.home.subtitle}
+              </p>
             </div>
           </div>
         </div>
-      </div>
 
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+          <Kpi label={t.admin.workers} value={String(PARTNERS.length)} icon={Users} />
+          <Kpi label={t.admin.verifiedWorkers} value={String(verifiedWorkers)} icon={BadgeCheck} />
+          <Kpi label={t.admin.pendingVerification} value={String(pendingVerification)} icon={Clock3} />
+          <Kpi label={t.admin.activeWorkers} value={String(availableMembers)} icon={Activity} />
+          <Kpi label={t.admin.activeBookings} value={String(activeCount)} icon={PackageCheck} />
+          <Kpi label={t.admin.completedJobs} value={String(deliveredCount)} icon={CheckCircle2} />
+          <Kpi label={t.admin.averageRating} value={averageRating ? `${averageRating.toFixed(1)}/5` : '—'} icon={StarIcon} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <FederationStat label={t.admin.customerPayments} value={rupees(revenue)} icon={IndianRupee} />
+          <FederationStat label={t.common.workerEarnings} value={rupees(federationGrossEarnings)} icon={Wallet} />
+          <FederationStat label={t.common.cooperativeContribution} value={rupees(cooperativeContributionTotal)} icon={Building2} />
+          <FederationStat label={t.common.welfareContribution} value={rupees(welfareContributionTotal)} icon={HeartPulse} />
+          <FederationStat label={t.admin.openComplaints} value={String(openComplaints)} icon={AlertTriangle} />
+          <FederationStat label={t.admin.emergencyCases} value={String(emergencyDispatch.emergencyBookings)} icon={Zap} />
+          <FederationStat label={t.admin.trustScore} value={`${averageTrustScore}/100`} icon={ShieldCheck} />
+          <FederationStat label={t.admin.reviews} value={String(reviews.length)} icon={StarIcon} />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-bold text-foreground">{t.admin.memberManagement}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{t.admin.filterMembers}</p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(['all', 'verified', 'pending', 'available', 'busy', 'emergency-ready'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setMemberFilter(filter)}
+                    className={`rounded-full px-2.5 py-1.5 text-[9px] font-bold ${memberFilter === filter ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground'}`}
+                  >
+                    {filter === 'all'
+                      ? t.admin.allMembers
+                      : filter === 'verified'
+                        ? t.certification.verified
+                        : filter === 'pending'
+                          ? t.certification.pending
+                          : filter === 'available'
+                            ? t.provider.online
+                            : filter === 'busy'
+                              ? t.admin.busy
+                              : t.admin.emergencyReady}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {filteredMembers.map((partner) => (
+                <div key={partner.id} className="rounded-xl border border-border/70 bg-background p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-xs font-bold text-primary">
+                      {partner.name.slice(0, 2)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-bold text-foreground">{partner.name}</p>
+                        <span className={`rounded-full px-2 py-1 text-[9px] font-bold ${partner.verified ? 'bg-primary/10 text-primary' : 'bg-accent/10 text-accent'}`}>
+                          {partner.verified ? t.certification.verified : t.certification.pending}
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate text-[11px] text-muted-foreground">{partner.services}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[9px] font-semibold text-muted-foreground">
+                        <span>{partner.available ? t.provider.online : t.admin.busy}</span>
+                        <span>{partner.rating.toFixed(1)} ★</span>
+                        <span>{partner.experience} {t.admin.experience.toLowerCase()}</span>
+                        <span>{partner.completedJobs} {t.admin.completedJobs.toLowerCase()}</span>
+                        <span>{t.admin.trustScore} {getStoredTrustScore(partner.id, partner)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {filteredMembers.length === 0 && <p className="py-5 text-center text-xs text-muted-foreground">{t.admin.noData}</p>}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <FederationPanel title={t.admin.skillsCertification} icon={GraduationIcon}>
+              <div className="grid grid-cols-2 gap-2">
+                <FederationStat label={t.admin.certifiedWorkers} value={String(verifiedWorkers)} icon={BadgeCheck} />
+                <FederationStat label={t.admin.trainingCompletion} value={String(trainingCompleted)} icon={CheckCircle2} />
+                <FederationStat label={t.admin.training} value={String(trainingInProgress)} icon={BookIcon} />
+                <FederationStat label={t.certification.certificateId} value={String(certificatesUnlocked)} icon={AwardIcon} />
+              </div>
+            </FederationPanel>
+
+            <FederationPanel title={t.admin.workforceAvailability} icon={Users}>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <FederationStat label={t.provider.online} value={String(availableMembers)} icon={Activity} />
+                <FederationStat label={t.admin.busy} value={String(PARTNERS.length - availableMembers)} icon={Clock3} />
+                <FederationStat label={t.admin.emergencyReadyWorkers} value={String(emergencyReadyPartners)} icon={Zap} />
+              </div>
+            </FederationPanel>
+
+            <FederationPanel title={t.admin.fairPayMonitoring} icon={Scale}>
+              <div className="grid grid-cols-2 gap-2">
+                <FederationStat label={t.admin.highestScore} value={highestFairPay ? `${highestFairPay}/100` : '—'} icon={TrendingUp} />
+                <FederationStat label={t.admin.lowestScore} value={lowestFairPay ? `${lowestFairPay}/100` : '—'} icon={TrendingDown} />
+                <FederationStat label={t.admin.workersNeedingReview} value={String(workerNeedsReview)} icon={AlertTriangle} />
+                <FederationStat label={t.common.fairPay} value={averageFairPayScore ? `${averageFairPayScore}/100` : '—'} icon={Scale} />
+              </div>
+            </FederationPanel>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <FederationPanel title={t.admin.bookingsOperations} icon={PackageCheck}>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {ORDER_STATUS_STEPS.map((step) => (
+                <FederationStat
+                  key={step.id}
+                  label={step.label}
+                  value={String(orders.filter((order) => order.status === step.id).length)}
+                  icon={step.id === 'delivered' ? CheckCircle2 : Activity}
+                />
+              ))}
+            </div>
+          </FederationPanel>
+
+          <FederationPanel title={t.admin.customerFeedback} icon={StarIcon}>
+            <div className="grid grid-cols-3 gap-2">
+              <FederationStat label={t.admin.reviews} value={String(reviews.length)} icon={StarIcon} />
+              <FederationStat label={t.admin.complaints} value={String(complaints.length)} icon={AlertTriangle} />
+              <FederationStat label={t.admin.openComplaints} value={String(openComplaints)} icon={Clock3} />
+            </div>
+            <div className="mt-3 space-y-2">
+              {reviews.slice(-3).reverse().map((review) => (
+                <div key={review.id} className="rounded-xl bg-secondary/60 p-3 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-foreground">{review.rating.toFixed(1)} ★</span>
+                    <span className="text-[10px] text-muted-foreground">#{review.orderId}</span>
+                  </div>
+                  {review.comment && <p className="mt-1 text-muted-foreground">{review.comment}</p>}
+                </div>
+              ))}
+              {reviews.length === 0 && <p className="text-xs text-muted-foreground">{t.admin.noData}</p>}
+            </div>
+          </FederationPanel>
+        </div>
+
+        <FederationPanel title={t.admin.serviceDemand} icon={TrendingUp}>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {servicePerformance.map((item) => (
+              <div key={item.service.id} className="rounded-xl border border-border/70 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-foreground">{item.service.name}</p>
+                  <span className="rounded-full bg-primary/10 px-2 py-1 text-[9px] font-bold text-primary">
+                    {item.demandLevel === 'high' ? t.admin.high : item.demandLevel === 'medium' ? t.admin.medium : t.admin.low}
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px] text-muted-foreground">
+                  <span>{t.admin.currentBookings}: {item.bookings}</span>
+                  <span>{t.admin.completedJobs}: {item.completed}</span>
+                  <span>{t.admin.availableProviders}: {item.available}/{item.providers}</span>
+                  <span>{t.admin.capacity}: {item.capacity === 'shortage' ? t.admin.shortage : item.capacity === 'partial' ? t.admin.partial : t.admin.covered}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </FederationPanel>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <FederationPanel title={t.admin.emergencyOperations} icon={Zap}>
+            <div className="grid grid-cols-3 gap-2">
+              <FederationStat label={t.admin.activeEmergencies} value={String(orders.filter((order) => order.bookingType === 'emergency' && order.status !== 'delivered').length)} icon={AlertTriangle} />
+              <FederationStat label={t.admin.emergencyReadyWorkers} value={String(emergencyReadyPartners)} icon={ShieldCheck} />
+              <FederationStat label={t.admin.emergencyCases} value={String(emergencyDispatch.emergencyBookings)} icon={Zap} />
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">{emergencyInsights[0] ?? t.admin.noData}</p>
+          </FederationPanel>
+
+          <FederationPanel title={t.admin.welfareInsurance} icon={HeartPulse}>
+            <div className="rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
+              <p className="font-bold text-foreground">{t.admin.dataInProviderPortal}</p>
+              <p className="mt-1">{t.common.welfareContribution}: {rupees(welfareContributionTotal)}</p>
+              <p className="mt-1">{t.admin.welfareInsurance}: {t.admin.dataInProviderPortal}</p>
+            </div>
+          </FederationPanel>
+        </div>
+
+        <FederationPanel title={t.admin.impact} icon={Sparkles}>
+          <p className="text-sm leading-relaxed text-foreground">
+            {t.common.appName} {t.admin.impact.toLowerCase()}: {workersWithEarnings} {t.admin.workersEarning.toLowerCase()} across {SERVICES.length} {t.admin.serviceCategories}.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <FederationStat label={t.admin.completedJobs} value={String(deliveredCount)} icon={CheckCircle2} />
+            <FederationStat label={t.admin.workersTrained} value={String(trainingCompleted)} icon={BookIcon} />
+            <FederationStat label={t.admin.workersCertified} value={String(verifiedWorkers)} icon={BadgeCheck} />
+            <FederationStat label={t.admin.emergencyHandled} value={String(emergencyDispatch.emergencyBookings)} icon={Zap} />
+          </div>
+        </FederationPanel>
+      </section>
 
       {/* =================================================
           SMART AI DECISION CENTER
@@ -1787,6 +1762,10 @@ export function AdminScreen() {
                       <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[9px] font-bold text-accent">
                         TRUST {aiDecision.recommendedProvider.trustScore}
                       </span>
+
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[9px] font-bold text-foreground">
+                        FAIRNESS {aiDecision.recommendedProvider.fairnessScore}
+                      </span>
                     </div>
 
                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1835,6 +1814,33 @@ export function AdminScreen() {
                         <BrainCircuit className="h-3.5 w-3.5 text-primary" />
 
                         <p className="text-[10px] font-bold text-foreground">
+                          Why this worker?
+                        </p>
+                      </div>
+
+                      <div className="mt-2 space-y-1.5">
+                        {aiWhyThisWorker.map(
+                          (reason, index) => (
+                            <div
+                              key={`${reason}-${index}`}
+                              className="flex gap-2"
+                            >
+                              <Check className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
+
+                              <p className="text-[10px] leading-relaxed text-muted-foreground">
+                                {reason}
+                              </p>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded-xl bg-secondary/50 p-3">
+                      <div className="flex items-center gap-2">
+                        <BrainCircuit className="h-3.5 w-3.5 text-primary" />
+
+                        <p className="text-[10px] font-bold text-foreground">
                           {t.admin.matchingFactors}
                         </p>
                       </div>
@@ -1855,6 +1861,12 @@ export function AdminScreen() {
                           ),
                         )}
                       </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      <AIDecisionMetric label="Service quality" value={`${Math.round((aiDecision.recommendedProvider.trustScore + aiDecision.recommendedProvider.rating * 20) / 2)}`} icon={StarIcon} />
+                      <AIDecisionMetric label="Fairness score" value={`${aiDecision.recommendedProvider.fairnessScore}`} icon={Scale} />
+                      <AIDecisionMetric label="Recent jobs" value={String(aiDecision.recommendedProvider.recentJobs)} icon={Activity} />
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -2143,13 +2155,43 @@ export function AdminScreen() {
         </div>
 
         <div className="mt-3 rounded-2xl border border-border bg-card p-4">
-          <div className="flex items-center gap-2"><Scale className="h-4 w-4 text-primary" /><p className="text-sm font-bold text-foreground">Cooperative Earnings & Fair Pay</p></div>
-          <p className="mt-1 text-[11px] text-muted-foreground">Completed-job payouts are transparent, persisted and split into worker, cooperative and welfare contributions.</p>
+          <div className="flex items-center gap-2"><Scale className="h-4 w-4 text-primary" /><p className="text-sm font-bold text-foreground">Cooperative Impact Dashboard</p></div>
+          <p className="mt-1 text-[11px] text-muted-foreground">Impact is measured in worker earnings, welfare protection, fair pay compliance and reinvestment into the cooperative.</p>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <CooperativeMoneyStat label="Worker Net" value={rupees(cooperativeEarningsTotal)} icon={Wallet} />
             <CooperativeMoneyStat label="Co-op Fund" value={rupees(cooperativeContributionTotal)} icon={Building2} />
             <CooperativeMoneyStat label="Welfare" value={rupees(welfareContributionTotal)} icon={HeartPulse} />
             <CooperativeMoneyStat label="Fair Pay Score" value={cooperativeEarnings.length ? `${averageFairPayScore}/100` : '—'} icon={Scale} />
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-primary" />
+              <p className="text-sm font-bold text-foreground">Impact Snapshot</p>
+            </div>
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[9px] font-bold text-primary">{demoScenarioBadge}</span>
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-4">
+            <CooperativeMetric label="Jobs served" value={String(orders.length)} />
+            <CooperativeMetric label="Verified workers" value={String(verifiedWorkers)} />
+            <CooperativeMetric label="Avg trust" value={`${averageTrustScore}/100`} />
+            <CooperativeMetric label="Welfare cover" value={`${welfareCoverage}%`} />
+          </div>
+
+          <div className="mt-3 rounded-xl border border-border bg-card p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Sample fair wage check</p>
+              <span className={`rounded-full px-2 py-1 text-[9px] font-bold ${demoScenarioBreakdown.compliant ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'}`}>{demoScenarioBreakdown.compliant ? 'Compliant' : 'Alert'}</span>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
+              <span>Worker: {rupees(demoScenarioBreakdown.workerPayout)}</span>
+              <span>Floor: {rupees(demoScenarioBreakdown.wageFloor)}</span>
+              <span>Co-op: {rupees(demoScenarioBreakdown.cooperativeContribution)}</span>
+              <span>Welfare: {rupees(demoScenarioBreakdown.welfareContribution)}</span>
+            </div>
           </div>
         </div>
 
@@ -2603,6 +2645,91 @@ export function AdminScreen() {
           </div>
 
           <div className="grid gap-3 px-4 pb-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-bold text-foreground">COOPERATIVE FAIRNESS</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Fair opportunity + service quality, calculated from current bookings.</p>
+                </div>
+                <Scale className="h-4 w-4 text-primary" />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <FederationStat label="Workers" value={String(PARTNERS.length)} icon={Users} />
+                <FederationStat label="Eligible" value={String(fairnessEligible)} icon={UserCheck} />
+                <FederationStat label="Avg balance" value={`${fairnessAverage}%`} icon={Scale} />
+                <FederationStat label="Alerts" value={String(fairnessAlerts)} icon={AlertTriangle} />
+              </div>
+              <div className="mt-3 flex gap-1.5 overflow-x-auto">
+                {(['all', 'under-allocated', 'balanced', 'high-workload', 'unavailable'] as const).map((filter) => (
+                  <button key={filter} type="button" onClick={() => setAllocationFilter(filter)} className={`whitespace-nowrap rounded-full px-2.5 py-1.5 text-[9px] font-bold ${allocationFilter === filter ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground'}`}>
+                    {filter === 'all' ? 'All' : filter.replace('-', ' ').toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 space-y-2">
+                {filteredFairnessAllocations.map((allocation) => (
+                  <div key={allocation.providerId} className="rounded-xl border border-border bg-card p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-bold text-foreground">{allocation.providerName}</p>
+                      <span className={`rounded-full px-2 py-1 text-[9px] font-bold ${allocation.status === 'under-allocated' ? 'bg-accent/10 text-accent' : allocation.status === 'high-workload' || allocation.status === 'unavailable' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>{allocation.status.replace('-', ' ').toUpperCase()}</span>
+                    </div>
+                    <p className="mt-1 text-[9px] text-muted-foreground">{allocation.serviceMatch ? allocationService?.name : 'Skill review needed'} · {allocation.recentJobs} recent jobs · {allocation.workload}% workload · Trust {allocation.trustScore}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-border bg-secondary/20 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-foreground">FAIR PAY MONITOR</p>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">Demo calculation. Worker payout cannot fall below the configured floor.</p>
+                  </div>
+                  <IndianRupee className="h-4 w-4 text-primary" />
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <FederationStat label="Jobs checked" value={String(wageJobsChecked)} icon={Search} />
+                  <FederationStat label="Compliant" value={String(wageJobsCompliant)} icon={CheckCircle2} />
+                  <FederationStat label="Welfare" value={rupees(transactionWelfareFund)} icon={HeartPulse} />
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {wageFloorRows.filter((row) => row.typical > 0).slice(0, 4).map((row) => (
+                    <div key={row.service} className="flex items-center justify-between gap-2 rounded-lg bg-card px-3 py-2 text-[10px]">
+                      <span className="font-semibold text-foreground">{row.service}</span>
+                      <span className={row.typical >= row.minimum ? 'text-primary' : 'text-destructive'}>Min {rupees(row.minimum)} · Typical {rupees(row.typical)} {row.typical >= row.minimum ? 'COMPLIANT' : 'ALERT'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-secondary/20 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold text-foreground">WELFARE FUND</p>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">Demo cooperative support balance and claim workflow.</p>
+                  </div>
+                  <HeartPulse className="h-4 w-4 text-primary" />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <FederationStat label="Collected" value={rupees(transactionWelfareFund)} icon={Wallet} />
+                  <FederationStat label="Paid" value={rupees(paidClaims)} icon={CheckCircle2} />
+                  <FederationStat label="Pending" value={String(pendingClaims)} icon={Clock3} />
+                  <FederationStat label="Available" value={rupees(availableWelfareBalance)} icon={HeartPulse} />
+                </div>
+                <div className="mt-3 space-y-2">
+                  {welfareClaims.length === 0 ? <p className="text-[10px] text-muted-foreground">No demo claims have been submitted.</p> : welfareClaims.slice(0, 4).map((claim) => (
+                    <div key={claim.id} className="flex items-center justify-between gap-2 rounded-lg bg-card px-3 py-2">
+                      <div className="min-w-0"><p className="truncate text-[10px] font-semibold text-foreground">{claim.providerName} · {rupees(claim.amount)}</p><p className="text-[9px] text-muted-foreground">{claim.category} · {claim.status}</p></div>
+                      {claim.status !== 'paid' && <button type="button" onClick={() => updateClaimStatus(claim)} className="shrink-0 rounded-lg bg-primary px-2 py-1.5 text-[9px] font-bold text-primary-foreground">Advance</button>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 px-4 pb-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-border bg-secondary/20 p-4">
               <div className="flex items-center justify-between gap-2">
                 <div>
@@ -2816,6 +2943,49 @@ export function AdminScreen() {
         </div>
 
         {/* Cooperative governance */}
+
+        <div className="mt-3 rounded-2xl border border-primary/20 bg-card p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-primary" />
+
+              <p className="text-sm font-bold text-foreground">
+                Presentation / Demo Mode
+              </p>
+            </div>
+            <span className="rounded-full bg-primary/10 px-2 py-1 text-[9px] font-bold text-primary">LIVE</span>
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {[
+              ['ai-match', 'AI Provider Match'],
+              ['emergency-booking', 'Emergency Booking'],
+              ['fair-wage-alert', 'Fair Wage Alert'],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setDemoScenario(id)
+                  toast(`${label} demo scenario activated.`, 'success')
+                }}
+                className={`rounded-xl border px-3 py-2 text-left text-[11px] font-bold ${demoScenario === id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-secondary/30 text-foreground'}`}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setDemoScenario('default')
+                toast('Demo mode reset to default cooperative view.', 'info')
+              }}
+              className="rounded-xl border border-border bg-card px-3 py-2 text-left text-[11px] font-bold text-foreground sm:col-span-2"
+            >
+              Reset Demo
+            </button>
+          </div>
+        </div>
 
         <div className="mt-3 rounded-2xl border border-primary/20 bg-card p-4">
           <div className="flex items-center gap-2">
@@ -5354,7 +5524,7 @@ function DispatchProviderCard({
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold text-foreground">
               {provider.providerName}
-            </p>
+            </p> 
 
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold text-primary">
               {provider.score}% AI MATCH
@@ -5479,3 +5649,4 @@ function TrendIndicator({
     </div>
   )
 }
+ 

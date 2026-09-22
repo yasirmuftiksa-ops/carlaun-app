@@ -26,6 +26,7 @@ import {
   generateEmergencyDispatch,
 } from './emergency-dispatch'
 import { generateDemandForecast } from './demand-forecast'
+import { calculateWageBreakdown } from './cooperative'
 
 export { ORDER_STATUS_STEPS }
 
@@ -2029,8 +2030,12 @@ export function StoreProvider({
     (
       orderId: string,
       providerId: string,
-      description = 'Worker requested emergency assistance during an active job.',
+      description = 'Provider has reported an emergency during the active service.',
     ) => {
+      const normalizedDescription =
+        description.trim() ||
+        'Provider has reported an emergency during the active service.'
+
       const existing = emergencyIncidents.find(
         (incident) =>
           incident.orderId === orderId &&
@@ -2087,11 +2092,13 @@ export function StoreProvider({
           ? 'replacement-required'
           : 'dispatching',
         priority: order.priority === 'emergency' ? 'critical' : 'high',
-        description,
+        description: normalizedDescription,
         replacementRequired,
       }
 
       setEmergencyIncidents((current) => [incident, ...current])
+
+      const adminNoticeMessage = `🚨 Emergency SOS\nProvider: ${provider.name}\nService: ${service?.serviceName ?? 'Service'}\nOrder: #${orderId}\nMessage: ${normalizedDescription}\nEmergency assistance requested.`
 
       addNotification({
         title: 'Emergency SOS sent',
@@ -2103,7 +2110,7 @@ export function StoreProvider({
       })
       addNotification({
         title: 'Emergency alert received',
-        message: 'Emergency assistance has been requested for the current service.',
+        message: adminNoticeMessage,
         type: 'emergency',
         audience: 'admin',
         orderId,
@@ -2175,25 +2182,90 @@ export function StoreProvider({
         return false
       }
 
+      const requiredServiceId = order.services[0]?.serviceId
+      const requiredService = SERVICES.find(
+        (service) => service.id === requiredServiceId,
+      )
+
+      if (!requiredServiceId) {
+        toast('This booking has no service to assign.', 'info')
+        return false
+      }
+
       const forecast = generateDemandForecast(SERVICES, orders)
       const dispatch = generateEmergencyDispatch(SERVICES, PARTNERS, forecast)
-      const recommendation = dispatch.dispatches
-        .find((item) => item.serviceId === order.services[0]?.serviceId)
-        ?.candidates.find(
-          (candidate) =>
-            candidate.available &&
-            candidate.providerId !== incident.providerId,
-        )
 
-      if (!recommendation) {
+      const eligibleProviders = PARTNERS
+        .filter(
+          (provider) =>
+            provider.available &&
+            provider.verified &&
+            provider.id !== incident.providerId,
+        )
+        .sort((first, second) => {
+          if (second.rating !== first.rating) {
+            return second.rating - first.rating
+          }
+
+          return (
+            Number.parseFloat(first.distance) -
+            Number.parseFloat(second.distance)
+          )
+        })
+
+      if (eligibleProviders.length === 0) {
         toast('No verified available replacement provider was found.', 'info')
         return false
       }
 
+      const normalizedServiceName =
+        requiredService?.name.toLowerCase() ?? ''
+      const normalizedServiceId = requiredServiceId.toLowerCase()
+      const matchesRequestedService = (provider: Partner) => {
+        const providerServices = provider.services
+          .split(/[•,|/]/)
+          .map((service) => service.trim().toLowerCase())
+          .filter(Boolean)
+
+        return providerServices.some(
+          (service) =>
+            service.includes(normalizedServiceName) ||
+            normalizedServiceName.includes(service) ||
+            service.includes(normalizedServiceId),
+        )
+      }
+
+      const dispatchRecommendation = dispatch.dispatches
+        .find((item) => item.serviceId === requiredServiceId)
+        ?.candidates
+        .map((candidate) =>
+          eligibleProviders.find(
+            (provider) => provider.id === candidate.providerId,
+          ),
+        )
+        .find((provider): provider is Partner => Boolean(provider))
+
+      const matchingProviders = eligibleProviders
+        .filter(matchesRequestedService)
+        .sort((first, second) => {
+          if (second.rating !== first.rating) {
+            return second.rating - first.rating
+          }
+
+          return (
+            Number.parseFloat(first.distance) -
+            Number.parseFloat(second.distance)
+          )
+        })
+      const fallbackProvider =
+        matchingProviders[0] ?? eligibleProviders[0]
+      const replacementProvider =
+        dispatchRecommendation ?? fallbackProvider
+
       const assigned = assignProviderToOrder(
         order.id,
-        recommendation.providerId,
-        order.services[0]?.serviceId,
+        replacementProvider.id,
+        requiredServiceId,
       )
 
       if (!assigned) return false
@@ -2204,19 +2276,19 @@ export function StoreProvider({
             ? {
                 ...item,
                 status: 'assistance-sent',
-                replacementProviderId: recommendation.providerId,
-                replacementProviderName: recommendation.providerName,
+                replacementProviderId: replacementProvider.id,
+                replacementProviderName: replacementProvider.name,
               }
             : item,
         ),
       )
       addNotification({
         title: 'Replacement provider assigned',
-        message: `${recommendation.providerName} has been assigned to continue booking ${order.id}.`,
+        message: `${replacementProvider.name} has been assigned to continue booking ${order.id}.`,
         type: 'emergency',
         audience: 'customer',
         orderId: order.id,
-        providerId: recommendation.providerId,
+        providerId: replacementProvider.id,
       })
       addNotification({
         title: 'Emergency replacement job assigned',
@@ -2224,15 +2296,15 @@ export function StoreProvider({
         type: 'emergency',
         audience: 'provider',
         orderId: order.id,
-        providerId: recommendation.providerId,
+        providerId: replacementProvider.id,
       })
       addNotification({
         title: 'Replacement provider assigned',
-        message: `${recommendation.providerName} was assigned after the emergency alert.`,
+        message: `${replacementProvider.name} was assigned after the emergency alert.`,
         type: 'emergency',
         audience: 'admin',
         orderId: order.id,
-        providerId: recommendation.providerId,
+        providerId: replacementProvider.id,
       })
       return true
     },
@@ -2314,14 +2386,16 @@ export function StoreProvider({
         const emergencyBonus = order.priority === 'emergency'
           ? Math.round(customerPaid * 0.1)
           : 0
-        const cooperativeContribution = Math.round(customerPaid * 0.05)
-        const welfareContribution = Math.round(customerPaid * 0.03)
-        const grossEarnings =
-          basePay + travelCompensation + skillBonus + reliabilityBonus + emergencyBonus
-        const netEarnings = Math.max(
-          0,
-          grossEarnings - cooperativeContribution - welfareContribution,
-        )
+        const wage = calculateWageBreakdown({
+          customerPayment: customerPaid,
+          serviceName: order.services[0]?.serviceName ?? 'Service',
+          distanceKm,
+          emergency: order.priority === 'emergency',
+        })
+        const cooperativeContribution = wage.cooperativeContribution
+        const welfareContribution = wage.welfareContribution
+        const grossEarnings = wage.workerPayout + cooperativeContribution + welfareContribution
+        const netEarnings = wage.workerPayout
         const fairPayScore = Math.min(
           100,
           62 +

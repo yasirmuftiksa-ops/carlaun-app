@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Activity,
+  AlertTriangle,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -44,9 +45,7 @@ import {
   useStore,
 } from '@/lib/store'
 import type { OrderStatus, Partner } from '@/lib/types'
-import type { DeliveryJourney } from '@/lib/types'
 import { ScreenHeader } from '@/components/screen-header'
-import { useLanguage } from '@/components/language-provider'
 import { Modal } from '@/components/ui/modal'
 
 type ExtendedOrder = {
@@ -263,6 +262,50 @@ function getProviderDistance(provider: Partner) {
   return provider.distance || '5 km'
 }
 
+const CUSTOMER_VERIFICATION_STORAGE_KEY = 'nexa_link_customer_verification'
+
+function getCustomerVerificationState() {
+  try {
+    const raw = localStorage.getItem(CUSTOMER_VERIFICATION_STORAGE_KEY)
+    if (!raw) return {} as Record<string, { pin: string; verified: boolean; createdAt: number }>
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {} as Record<string, { pin: string; verified: boolean; createdAt: number }>
+  }
+}
+
+function ensureCustomerVerificationPin(orderId: string) {
+  const state = getCustomerVerificationState()
+  const existing = state[orderId]
+  if (existing?.pin) return existing.pin
+
+  const pin = String(Math.floor(1000 + Math.random() * 9000))
+  const next = { ...state, [orderId]: { pin, verified: false, createdAt: Date.now() } }
+  localStorage.setItem(CUSTOMER_VERIFICATION_STORAGE_KEY, JSON.stringify(next))
+  return pin
+}
+
+function readCustomerVerification(orderId: string) {
+  const state = getCustomerVerificationState()
+  return state[orderId] ?? null
+}
+
+function verifyCustomerPin(orderId: string, enteredPin: string) {
+  const state = getCustomerVerificationState()
+  const record = state[orderId]
+  if (!record) return false
+
+  const matches = String(record.pin) === String(enteredPin).trim()
+
+  if (matches) {
+    const next = { ...state, [orderId]: { ...record, verified: true, createdAt: record.createdAt || Date.now() } }
+    localStorage.setItem(CUSTOMER_VERIFICATION_STORAGE_KEY, JSON.stringify(next))
+  }
+
+  return matches
+}
+
 function getProviderInitials(name: string) {
   return name
     .split(' ')
@@ -344,18 +387,6 @@ function getInitialWorkflow(
     default:
       return 'assigned'
   }
-}
-
-function getWorkflowFromJourney(
-  journey: DeliveryJourney | undefined,
-  orderStatus: OrderStatus,
-): ProviderWorkflowStatus {
-  if (!journey) return getInitialWorkflow(orderStatus)
-  if (journey.stage === 'DRIVER_EN_ROUTE' || journey.stage === 'NEAR_CUSTOMER') return 'on-the-way'
-  if (journey.stage === 'ARRIVED_CUSTOMER' || journey.stage === 'PICKUP_COMPLETED') return 'arrived'
-  if (journey.stage === 'SERVICE_STARTED' || journey.stage === 'SERVICE_COMPLETED') return 'work-started'
-  if (journey.stage === 'DELIVERED') return 'completed'
-  return 'assigned'
 }
 
 /*
@@ -480,15 +511,8 @@ export function ProviderScreen() {
   const {
     orders,
     advanceStatus,
-    getDeliveryJourney,
-    advanceDeliveryJourney,
-    cooperativeEarnings,
-    creditCooperativeEarning,
     toast,
-    emergencyIncidents,
-    createEmergencyIncident,
   } = useStore()
-  const { t } = useLanguage()
 
   const [providerId, setProviderId] =
     useState(
@@ -508,17 +532,64 @@ export function ProviderScreen() {
       | 'training'
       | 'trust'
       | 'profile'
-      | 'safety'
     >('overview')
-
-  const [safetyConfirmOpen, setSafetyConfirmOpen] =
-    useState(false)
 
   /*
    * ---------------------------------------------------------
    * PROVIDER WORKFLOW
    * ---------------------------------------------------------
    */
+
+  const [workflowStates, setWorkflowStates] =
+    useState<
+      Record<
+        string,
+        ProviderWorkflowStatus
+      >
+    >({})
+
+  const [advancingOrderIds, setAdvancingOrderIds] =
+    useState<Record<string, boolean>>({})
+
+  const advancingOrderIdsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    try {
+      const saved =
+        localStorage.getItem(
+          'nexa_link_provider_workflows',
+        )
+
+      if (saved) {
+        const parsed =
+          JSON.parse(saved)
+
+        if (
+          parsed &&
+          typeof parsed === 'object'
+        ) {
+          setWorkflowStates(
+            parsed,
+          )
+        }
+      }
+    } catch {
+      // Ignore invalid local storage data.
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'nexa_link_provider_workflows',
+        JSON.stringify(
+          workflowStates,
+        ),
+      )
+    } catch {
+      // Ignore local storage errors.
+    }
+  }, [workflowStates])
 
   const provider =
     PARTNERS.find(
@@ -632,6 +703,70 @@ export function ProviderScreen() {
 
   /*
    * ---------------------------------------------------------
+   * INITIALIZE PROVIDER WORKFLOW
+   * ---------------------------------------------------------
+   *
+   * If the order already has a system status,
+   * synchronize the provider journey with it.
+   */
+
+  useEffect(() => {
+    if (!providerOrders.length) {
+      return
+    }
+
+    setWorkflowStates((current) => {
+      const next = {
+        ...current,
+      }
+
+      let changed = false
+
+      for (const order of providerOrders) {
+        const expectedWorkflow =
+          getInitialWorkflow(
+            order.status,
+          )
+
+        /*
+         * Create workflow state for
+         * newly assigned jobs.
+         */
+        if (
+          !next[order.id]
+        ) {
+          next[order.id] =
+            expectedWorkflow
+
+          changed = true
+          continue
+        }
+
+        /*
+         * If the order was already completed,
+         * make sure provider journey is completed.
+         */
+        if (
+          order.status ===
+            'delivered' &&
+          next[order.id] !==
+            'completed'
+        ) {
+          next[order.id] =
+            'completed'
+
+          changed = true
+        }
+      }
+
+      return changed
+        ? next
+        : current
+    })
+  }, [providerOrders])
+
+  /*
+   * ---------------------------------------------------------
    * JOB STATS
    * ---------------------------------------------------------
    */
@@ -642,29 +777,6 @@ export function ProviderScreen() {
         order.status !==
         'delivered',
     )
-
-  const currentSafetyJob = activeJobs[0]
-  const activeSafetyIncident = emergencyIncidents.find(
-    (incident) =>
-      incident.providerId === provider.id &&
-      incident.status !== 'resolved' &&
-      incident.status !== 'cancelled',
-  )
-
-  function submitSafetyAlert() {
-    if (!currentSafetyJob) {
-      toast(t.safety.noActiveJob, 'info')
-      setSafetyConfirmOpen(false)
-      return
-    }
-
-    createEmergencyIncident(
-      currentSafetyJob.id,
-      provider.id,
-      'Emergency assistance requested from the Worker Safety Center.',
-    )
-    setSafetyConfirmOpen(false)
-  }
 
   const completedJobs =
     providerOrders.filter(
@@ -691,31 +803,6 @@ export function ProviderScreen() {
   const providerEarnings =
     completedRevenue -
     platformFee
-
-  const cooperativeEarningsForProvider = useMemo(
-    () => cooperativeEarnings
-      .filter((earning) => earning.providerId === provider.id)
-      .sort((a, b) => b.createdAt - a.createdAt),
-    [cooperativeEarnings, provider.id],
-  )
-
-  const cooperativeTotals = useMemo(() =>
-    cooperativeEarningsForProvider.reduce(
-      (totals, earning) => ({
-        gross: totals.gross + earning.grossEarnings,
-        net: totals.net + earning.netEarnings,
-        cooperative: totals.cooperative + earning.cooperativeContribution,
-        welfare: totals.welfare + earning.welfareContribution,
-      }),
-      { gross: 0, net: 0, cooperative: 0, welfare: 0 },
-    ), [cooperativeEarningsForProvider])
-
-  const fairPayScore = cooperativeEarningsForProvider.length
-    ? Math.round(cooperativeEarningsForProvider.reduce(
-      (sum, earning) => sum + earning.fairPayScore,
-      0,
-    ) / cooperativeEarningsForProvider.length)
-    : Math.round(Math.min(100, 70 + (provider.verified ? 10 : 0) + provider.experience * 2))
 
   /*
    * ---------------------------------------------------------
@@ -1323,57 +1410,83 @@ export function ProviderScreen() {
     orderId: string,
     orderStatus: OrderStatus,
   ) {
-    const journey = getDeliveryJourney(orderId)
-    const currentWorkflow = getWorkflowFromJourney(journey, orderStatus)
-    if (currentWorkflow === 'completed') {
-      toast(
-        'This job is already completed.',
-        'info',
-      )
+    if (advancingOrderIdsRef.current.has(orderId)) {
       return
     }
 
-    const updatedJourney = advanceDeliveryJourney(orderId)
-    if (!updatedJourney) return
-    const nextWorkflow = getWorkflowFromJourney(updatedJourney, orderStatus)
+    advancingOrderIdsRef.current.add(orderId)
+    setAdvancingOrderIds((current) => ({
+      ...current,
+      [orderId]: true,
+    }))
 
-    if (nextWorkflow === 'completed') {
-      const credited = creditCooperativeEarning(orderId, provider.id)
-      if (credited) {
-        toast(
-          `Earnings credited: ${rupees(credited.netEarnings)}.`,
-          'success',
-        )
-      }
+    const currentWorkflow =
+      workflowStates[orderId] ??
+      getInitialWorkflow(orderStatus)
+
+    const nextWorkflow =
+      getNextWorkflowStatus(currentWorkflow)
+
+    if (!nextWorkflow) {
+      advancingOrderIdsRef.current.delete(orderId)
+      setAdvancingOrderIds((current) => ({
+        ...current,
+        [orderId]: false,
+      }))
+      toast('This job is already completed.', 'info')
+      return
     }
 
-    /*
-     * User-friendly action message.
-     */
-    const message =
-      nextWorkflow ===
-      'accepted'
-        ? `Job #${orderId} accepted.`
-        : nextWorkflow ===
-            'on-the-way'
-          ? `Job #${orderId}: journey started.`
-          : nextWorkflow ===
-              'arrived'
-            ? `Job #${orderId}: customer location reached.`
-            : nextWorkflow ===
-                'work-started'
-              ? `Job #${orderId}: service started.`
-              : nextWorkflow ===
-                  'completed'
-                ? `Job #${orderId}: service completed.`
-                : `Job #${orderId}: ${getWorkflowLabel(
-                    nextWorkflow,
-                  )}.`
+    const nextOrderStatus =
+      getOrderStatusForWorkflow(nextWorkflow)
 
-    toast(
-      message,
-      'success',
-    )
+    // Optimistically update the provider journey immediately.
+    setWorkflowStates((current) => {
+      const next = {
+        ...current,
+        [orderId]: nextWorkflow,
+      }
+
+      try {
+        localStorage.setItem(
+          'nexa_link_provider_workflows',
+          JSON.stringify(next),
+        )
+      } catch {
+        // Ignore local storage errors.
+      }
+
+      return next
+    })
+
+    // Keep the shared customer/system order synchronized.
+    if (nextOrderStatus !== orderStatus) {
+      advanceStatus(orderId, nextOrderStatus)
+    }
+
+    const message =
+      nextWorkflow === 'accepted'
+        ? `Job #${orderId} accepted.`
+        : nextWorkflow === 'on-the-way'
+          ? `Job #${orderId}: journey started.`
+          : nextWorkflow === 'arrived'
+            ? `Job #${orderId}: customer location reached.`
+            : nextWorkflow === 'work-started'
+              ? `Job #${orderId}: service started.`
+              : nextWorkflow === 'completed'
+                ? `Job #${orderId}: service completed.`
+                : `Job #${orderId}: ${getWorkflowLabel(nextWorkflow)}.`
+
+    toast(message, 'success')
+
+    // Prevent accidental double-clicks while React commits the update.
+    window.setTimeout(() => {
+      advancingOrderIdsRef.current.delete(orderId)
+      setAdvancingOrderIds((current) => ({
+        ...current,
+        [orderId]: false,
+      }))
+    }, 120)
   }
 
   /*
@@ -1415,18 +1528,20 @@ export function ProviderScreen() {
     return (
       <div className="min-h-dvh bg-background">
         <ScreenHeader
-          title={t.provider.dashboard}
+          title="Provider Dashboard"
         />
 
         <div className="px-4 py-10 text-center">
           <UserRound className="mx-auto h-12 w-12 text-muted-foreground" />
 
           <h2 className="mt-4 text-lg font-bold text-foreground">
-            {t.provider.dashboard}
+            No provider available
           </h2>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            {t.provider.cooperativeVerification}
+            Register a provider to
+            access the provider
+            dashboard.
           </p>
         </div>
       </div>
@@ -1436,7 +1551,7 @@ export function ProviderScreen() {
   return (
     <div className="min-h-dvh bg-background pb-28">
       <ScreenHeader
-        title={t.provider.dashboard}
+        title="Provider Dashboard"
         showBack={false}
       />
 
@@ -1454,7 +1569,7 @@ export function ProviderScreen() {
 
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t.provider.profile}
+              Signed in as provider
             </p>
 
             <p className="truncate text-base font-bold text-foreground">
@@ -1465,8 +1580,8 @@ export function ProviderScreen() {
               <ShieldCheck className="h-3.5 w-3.5 text-primary" />
 
               {provider.verified
-                ? t.certification.verified
-                : t.certification.pending}
+                ? 'Verified cooperative provider'
+                : 'Verification pending'}
             </div>
           </div>
         </div>
@@ -1532,14 +1647,14 @@ export function ProviderScreen() {
             <div className="text-left">
               <p className="text-sm font-bold text-foreground">
                 {isOnline
-                  ? t.provider.online
-                    : t.provider.offline}
+                  ? 'You are Online'
+                  : 'You are Offline'}
               </p>
 
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {isOnline
-                  ? t.provider.activeJobs
-                  : t.provider.offline}
+                  ? 'Ready to receive new service assignments'
+                  : 'You will not receive new assignments'}
               </p>
             </div>
           </div>
@@ -1559,14 +1674,7 @@ export function ProviderScreen() {
           ===================================================== */}
 
       <section className="px-4 pt-5">
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-9">
-          <DashboardTab
-            active={activeSection === 'safety'}
-            icon={<ShieldCheck className="h-4 w-4" />}
-            label={t.safety.title}
-            onClick={() => setActiveSection('safety')}
-          />
-
+        <div className="grid grid-cols-8 gap-2">
           <DashboardTab
             active={
               activeSection ===
@@ -1575,7 +1683,7 @@ export function ProviderScreen() {
             icon={
               <Activity className="h-4 w-4" />
             }
-            label={t.provider.overview}
+            label="Overview"
             onClick={() =>
               setActiveSection(
                 'overview',
@@ -1591,7 +1699,7 @@ export function ProviderScreen() {
             icon={
               <Navigation className="h-4 w-4" />
             }
-            label={t.provider.jobs}
+            label="Jobs"
             onClick={() =>
               setActiveSection(
                 'jobs',
@@ -1607,7 +1715,7 @@ export function ProviderScreen() {
             icon={
               <Wallet className="h-4 w-4" />
             }
-            label={t.provider.earnings}
+            label="Earnings"
             onClick={() =>
               setActiveSection(
                 'earnings',
@@ -1623,7 +1731,7 @@ export function ProviderScreen() {
             icon={
               <HeartPulse className="h-4 w-4" />
             }
-            label={t.provider.welfare}
+            label="Welfare"
             onClick={() =>
               setActiveSection(
                 'welfare',
@@ -1639,7 +1747,7 @@ export function ProviderScreen() {
             icon={
               <GraduationCap className="h-4 w-4" />
             }
-            label={t.provider.skills}
+            label="Skills"
             onClick={() =>
               setActiveSection(
                 'skills',
@@ -1655,7 +1763,7 @@ export function ProviderScreen() {
             icon={
               <BookOpen className="h-4 w-4" />
             }
-            label={t.provider.skillCertification}
+            label="Training"
             onClick={() =>
               setActiveSection(
                 'training',
@@ -1671,7 +1779,7 @@ export function ProviderScreen() {
             icon={
               <Trophy className="h-4 w-4" />
             }
-            label={t.certification.customerTrust}
+            label="Trust"
             onClick={() =>
               setActiveSection(
                 'trust',
@@ -1687,7 +1795,7 @@ export function ProviderScreen() {
             icon={
               <UserRound className="h-4 w-4" />
             }
-            label={t.provider.profile}
+            label="Profile"
             onClick={() =>
               setActiveSection(
                 'profile',
@@ -1696,92 +1804,6 @@ export function ProviderScreen() {
           />
         </div>
       </section>
-
-      {activeSection === 'safety' && (
-        <section className="space-y-4 px-4 pt-5">
-          <div className="rounded-3xl border border-destructive/25 bg-destructive/[0.04] p-5">
-            <div className="flex items-start gap-3">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-destructive text-destructive-foreground">
-                <CircleAlert className="size-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold uppercase tracking-wide text-destructive">
-                  {t.safety.title}
-                </p>
-                <h2 className="mt-1 font-display text-xl font-bold text-foreground">
-                  {t.safety.emergencySos}
-                </h2>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  {activeSafetyIncident ? t.safety.emergencyActive : t.safety.readiness}
-                </p>
-              </div>
-              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">
-                {activeSafetyIncident ? t.safety.emergencyActive : currentSafetyJob ? t.safety.onActiveJob : t.safety.ready}
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setSafetyConfirmOpen(true)}
-              disabled={Boolean(activeSafetyIncident)}
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-destructive px-4 py-4 text-sm font-extrabold text-destructive-foreground shadow-[var(--shadow-soft)] transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <CircleAlert className="size-5" />
-              {activeSafetyIncident ? t.safety.emergencyActive : t.safety.sendSos}
-            </button>
-            <p className="mt-2 text-center text-[10px] text-muted-foreground">
-              Demo cooperative dispatch. This does not contact public emergency services.
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <p className="text-sm font-bold text-foreground">{t.safety.currentJob}</p>
-            {currentSafetyJob ? (
-              <div className="mt-3 space-y-2 text-xs">
-                <div className="flex justify-between gap-3"><span className="text-muted-foreground">{t.safety.service}</span><span className="font-bold text-foreground">{currentSafetyJob.services[0]?.serviceName ?? 'Service'}</span></div>
-                <div className="flex justify-between gap-3"><span className="text-muted-foreground">{t.safety.customer}</span><span className="font-bold text-foreground">Customer</span></div>
-                <div className="flex justify-between gap-3"><span className="text-muted-foreground">{t.safety.location}</span><span className="max-w-[65%] text-right font-bold text-foreground">{currentSafetyJob.address.line}</span></div>
-                <div className="flex justify-between gap-3"><span className="text-muted-foreground">{t.orders.orderDetails}</span><span className="font-mono font-bold text-foreground">#{currentSafetyJob.id}</span></div>
-              </div>
-            ) : (
-              <p className="mt-2 text-xs text-muted-foreground">{t.safety.noActiveJob}</p>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <p className="text-sm font-bold text-foreground">{t.safety.instructions}</p>
-            <ul className="mt-3 space-y-2 text-xs leading-relaxed text-muted-foreground">
-              <li>• Move to a safe location when possible.</li>
-              <li>• Keep the customer and cooperative team informed.</li>
-              <li>• Use SOS only when assistance is genuinely required.</li>
-            </ul>
-            <p className="mt-3 text-xs text-muted-foreground">{t.safety.emergencyContact}: Cooperative support team</p>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <p className="text-sm font-bold text-foreground">{t.safety.incidentHistory}</p>
-            <div className="mt-3 space-y-2">
-              {emergencyIncidents.filter((incident) => incident.providerId === provider.id).map((incident) => (
-                <div key={incident.id} className="rounded-xl bg-secondary/60 p-3 text-xs">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-bold text-foreground">{incident.serviceName}</p>
-                      <p className="mt-1 text-muted-foreground">#{incident.orderId} · {new Date(incident.timestamp).toLocaleDateString()}</p>
-                    </div>
-                    <span className="rounded-full bg-primary/10 px-2 py-1 text-[9px] font-bold text-primary">
-                      {incident.status === 'resolved' ? t.safety.resolved : incident.status === 'replacement-required' ? t.safety.replacementRequired : incident.status === 'assistance-sent' ? t.safety.assistanceSent : t.safety.dispatching}
-                    </span>
-                  </div>
-                  {incident.replacementProviderName && <p className="mt-2 text-muted-foreground">Replacement: {incident.replacementProviderName}</p>}
-                </div>
-              ))}
-              {emergencyIncidents.filter((incident) => incident.providerId === provider.id).length === 0 && (
-                <p className="text-xs text-muted-foreground">{t.admin.noData}</p>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* =====================================================
           OVERVIEW
@@ -1830,48 +1852,6 @@ export function ProviderScreen() {
                 providerEarnings,
               )}
             />
-          </section>
-
-          <section className="px-4 pt-5">
-            <SectionTitle
-              icon={<Wallet className="h-4 w-4" />}
-              title="Cooperative Earnings & Fair Pay"
-            />
-
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <ProviderStat label="Net earnings" value={rupees(cooperativeTotals.net)} />
-              <ProviderStat label="Co-op contribution" value={rupees(cooperativeTotals.cooperative)} />
-              <ProviderStat label="Welfare fund" value={rupees(cooperativeTotals.welfare)} />
-              <ProviderStat label="Avg / job" value={rupees(cooperativeEarningsForProvider.length ? Math.round(cooperativeTotals.net / cooperativeEarningsForProvider.length) : 0)} />
-            </div>
-
-            <div className="mt-3 rounded-2xl border border-primary/20 bg-primary/5 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-bold text-foreground">Fair Pay Score</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Verified skills, rating, experience, travel and emergency priority are included.</p>
-                </div>
-                <span className="rounded-full bg-primary px-3 py-1 text-sm font-bold text-primary-foreground">{fairPayScore}/100</span>
-              </div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-primary/15"><div className="h-full rounded-full bg-primary" style={{ width: `${fairPayScore}%` }} /></div>
-              <p className="mt-2 text-[11px] text-muted-foreground">Transparent demo calculation: base service pay + verified skill, reliability, travel and emergency bonuses − cooperative and welfare contributions.</p>
-            </div>
-
-            <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card">
-              <div className="border-b border-border px-4 py-3">
-                <p className="text-sm font-bold text-foreground">Recent Earnings</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">Each completed job is credited once and kept in your cooperative history.</p>
-              </div>
-              <div className="divide-y divide-border">
-                {cooperativeEarningsForProvider.slice(0, 5).map((earning) => (
-                  <div key={earning.id} className="px-4 py-3">
-                    <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-foreground">{earning.serviceName}</p><p className="mt-0.5 text-[10px] text-muted-foreground">Base {rupees(earning.basePay)} + travel {rupees(earning.travelCompensation)} + skill {rupees(earning.skillBonus)}{earning.emergencyBonus > 0 ? ` + emergency ${rupees(earning.emergencyBonus)}` : ''}</p></div><p className="text-sm font-bold text-primary">{rupees(earning.netEarnings)}</p></div>
-                    <p className="mt-1 text-[10px] text-muted-foreground">Co-op {rupees(earning.cooperativeContribution)} · Welfare {rupees(earning.welfareContribution)} · Fair pay {earning.fairPayScore}/100</p>
-                  </div>
-                ))}
-                {cooperativeEarningsForProvider.length === 0 && <div className="px-4 py-6 text-xs text-muted-foreground">Complete a provider job to generate an explainable cooperative payout.</div>}
-              </div>
-            </div>
           </section>
 
           <section className="px-4 pt-5">
@@ -2229,9 +2209,16 @@ export function ProviderScreen() {
                       provider.id
                     }
                     workflowStatus={
-                      getWorkflowFromJourney(
-                        getDeliveryJourney(order.id),
+                      workflowStates[
+                        order.id
+                      ] ??
+                      getInitialWorkflow(
                         order.status,
+                      )
+                    }
+                    isAdvancing={
+                      Boolean(
+                        advancingOrderIds[order.id],
                       )
                     }
                     onAdvance={
@@ -2282,11 +2269,16 @@ export function ProviderScreen() {
                     provider.id
                   }
                   workflowStatus={
-                    getWorkflowFromJourney(
-                      getDeliveryJourney(order.id),
+                    workflowStates[
+                      order.id
+                    ] ??
+                    getInitialWorkflow(
                       order.status,
                     )
                   }
+                  isAdvancing={Boolean(
+                    advancingOrderIds[order.id],
+                  )}
                   onAdvance={
                     handleWorkflowAdvance
                   }
@@ -3789,32 +3781,6 @@ export function ProviderScreen() {
           </div>
         </div>
       </section>
-
-      <Modal
-        open={safetyConfirmOpen}
-        onClose={() => setSafetyConfirmOpen(false)}
-        title={t.safety.confirmTitle}
-      >
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {t.safety.confirmMessage}
-        </p>
-        <div className="mt-5 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setSafetyConfirmOpen(false)}
-            className="rounded-xl border border-border px-4 py-3 text-sm font-bold text-foreground"
-          >
-            {t.safety.cancel}
-          </button>
-          <button
-            type="button"
-            onClick={submitSafetyAlert}
-            className="rounded-xl bg-destructive px-4 py-3 text-sm font-bold text-destructive-foreground"
-          >
-            {t.safety.sendSos}
-          </button>
-        </div>
-      </Modal>
     </div>
   )
 }
@@ -4001,6 +3967,7 @@ function JobCard({
   order,
   providerId,
   workflowStatus,
+  isAdvancing,
   onAdvance,
   onNavigate,
 }: {
@@ -4023,6 +3990,7 @@ function JobCard({
   }
   providerId: string
   workflowStatus: ProviderWorkflowStatus
+  isAdvancing: boolean
   onAdvance: (
     orderId: string,
     status: OrderStatus,
@@ -4031,6 +3999,11 @@ function JobCard({
     address?: string,
   ) => void
 }) {
+  const {
+    createEmergencyIncident,
+    emergencyIncidents,
+  } = useStore()
+
   const extended =
     order as typeof order &
       ExtendedOrder
@@ -4105,9 +4078,83 @@ function JobCard({
       order.total * 0.9,
     )
 
+  const [customerPinInput, setCustomerPinInput] = useState('')
+  const [verificationFeedback, setVerificationFeedback] = useState<string | null>(null)
+  const [verificationRecord, setVerificationRecord] = useState<{ pin: string; verified: boolean; createdAt: number } | null>(
+    readCustomerVerification(order.id),
+  )
+  const [sosModalOpen, setSosModalOpen] = useState(false)
+  const [sosMessage, setSosMessage] = useState('I need assistance at the customer location.')
+  const [sosSubmitting, setSosSubmitting] = useState(false)
+
+  const activeEmergencyIncident = emergencyIncidents.find(
+    (incident) =>
+      incident.orderId === order.id &&
+      incident.providerId === providerId &&
+      incident.status !== 'resolved' &&
+      incident.status !== 'cancelled',
+  )
+
+  const sosAlreadySent = Boolean(activeEmergencyIncident)
+
+  const sendSos = () => {
+    if (sosSubmitting || sosAlreadySent) {
+      return
+    }
+
+    setSosSubmitting(true)
+
+    const submittedMessage =
+      sosMessage.trim() ||
+      'Provider has reported an emergency during the active service.'
+
+    const incident = createEmergencyIncident(
+      order.id,
+      providerId,
+      submittedMessage,
+    )
+
+    setSosSubmitting(false)
+    setSosModalOpen(false)
+
+    if (incident) {
+      setSosMessage('I need assistance at the customer location.')
+    }
+  }
+
+  useEffect(() => {
+    setVerificationRecord(readCustomerVerification(order.id))
+  }, [order.id, workflowStatus])
+
+  useEffect(() => {
+    if (sosAlreadySent) {
+      setSosModalOpen(false)
+    }
+  }, [sosAlreadySent])
+
+  const customerPin = verificationRecord?.pin ?? ensureCustomerVerificationPin(order.id)
+  const customerVerified = verificationRecord?.verified ?? false
+  const customerVerificationRequired = nextWorkflowStatus === 'work-started' && workflowStatus === 'arrived'
+
+  const handleCustomerVerification = () => {
+    const isValid = verifyCustomerPin(order.id, customerPinInput)
+    const nextState = readCustomerVerification(order.id)
+    setVerificationRecord(nextState)
+
+    if (isValid) {
+      setVerificationFeedback('Customer verified. Service can begin.')
+      setCustomerPinInput('')
+      return
+    }
+
+    setVerificationFeedback('Invalid verification PIN.')
+  }
+
   return (
     <motion.div
-      layout
+      initial={false}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.12 }}
       className={`overflow-hidden rounded-2xl border bg-card ${
         isEmergency
           ? 'border-accent/40'
@@ -4310,6 +4357,93 @@ function JobCard({
           </div>
         )}
 
+        {!isCompleted && (
+          <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/[0.04] p-3">
+            {sosAlreadySent ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-wide">🚨 SOS Sent</span>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Your emergency request has been sent to the cooperative support team.
+                </p>
+
+                <p className="text-[11px] font-semibold text-foreground">
+                  Status: Emergency assistance requested
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-destructive">
+                  Emergency response
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => setSosModalOpen(true)}
+                  disabled={sosSubmitting}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-destructive px-3 py-3 text-xs font-bold text-destructive-foreground transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:bg-destructive/70"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  {sosSubmitting ? 'Sending SOS...' : '🚨 EMERGENCY SOS'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        <Modal
+          open={sosModalOpen}
+          onClose={() => setSosModalOpen(false)}
+          title="🚨 Emergency SOS"
+          size="md"
+        >
+          <div className="space-y-4">
+            <p className="text-sm leading-6 text-muted-foreground">
+              Are you sure you want to report an emergency for this service?
+              <span className="mt-2 block">
+                This will immediately notify the cooperative federation/admin team.
+              </span>
+            </p>
+
+            <div className="space-y-2">
+              <label htmlFor={`sos-message-${order.id}`} className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                Emergency message
+              </label>
+
+              <textarea
+                id={`sos-message-${order.id}`}
+                value={sosMessage}
+                onChange={(event) => setSosMessage(event.target.value.slice(0, 180))}
+                rows={3}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
+                placeholder="I need assistance at the customer location."
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setSosModalOpen(false)}
+                className="flex-1 rounded-xl border border-border bg-card px-3 py-2.5 text-xs font-bold text-foreground"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={sendSos}
+                disabled={sosSubmitting}
+                className="flex-1 rounded-xl bg-destructive px-3 py-2.5 text-xs font-bold text-destructive-foreground disabled:cursor-not-allowed disabled:bg-destructive/70"
+              >
+                {sosSubmitting ? 'Sending SOS...' : 'Send SOS'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+
         {/* ===================================================
             SERVICES
             =================================================== */}
@@ -4338,15 +4472,56 @@ function JobCard({
           nextWorkflowStatus &&
           nextWorkflowLabel && (
             <div className="mt-4">
+              {customerVerificationRequired && (
+                <div className="mb-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Customer Verification</p>
+                    <span className="rounded-full bg-primary/10 px-2 py-1 text-[9px] font-bold text-primary">PIN: {customerPin}</span>
+                  </div>
+
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      value={customerPinInput}
+                      onChange={(event) => setCustomerPinInput(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="Enter 4-digit PIN"
+                      inputMode="numeric"
+                      maxLength={4}
+                      className="flex-1 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCustomerVerification}
+                      className="rounded-xl bg-primary px-3 py-2 text-[10px] font-bold text-primary-foreground"
+                    >
+                      Verify
+                    </button>
+                  </div>
+
+                  {verificationFeedback && (
+                    <p className={`mt-2 text-[10px] ${verificationFeedback.includes('Invalid') ? 'text-destructive' : 'text-primary'}`}>
+                      {verificationFeedback}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <button
                 type="button"
+                disabled={isAdvancing || (nextWorkflowStatus === 'work-started' && !customerVerified)}
+                aria-busy={isAdvancing}
                 onClick={() =>
                   onAdvance(
                     order.id,
                     order.status,
                   )
                 }
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-xs font-bold text-primary-foreground transition-all hover:brightness-110 active:scale-[0.98]"
+                className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold text-primary-foreground transition-all ${
+                  isAdvancing
+                    ? 'cursor-wait bg-primary/60'
+                    : nextWorkflowStatus === 'work-started' && !customerVerified
+                      ? 'cursor-not-allowed bg-muted text-muted-foreground'
+                      : 'bg-primary hover:brightness-110 active:scale-[0.98]'
+                }`}
               >
                 {nextWorkflowStatus ===
                 'accepted' ? (
@@ -4364,22 +4539,21 @@ function JobCard({
                   <CheckCircle2 className="h-4 w-4" />
                 )}
 
-                {nextWorkflowStatus ===
-                'accepted'
-                  ? 'Accept Job'
-                  : nextWorkflowStatus ===
-                      'on-the-way'
-                    ? 'Start Journey'
-                    : nextWorkflowStatus ===
-                        'arrived'
-                      ? "I've Arrived"
-                      : nextWorkflowStatus ===
-                          'work-started'
-                        ? 'Start Service'
-                        : nextWorkflowStatus ===
-                            'completed'
-                          ? 'Complete Service'
-                          : `Mark as ${nextWorkflowLabel}`}
+                {isAdvancing
+                  ? 'Updating…'
+                  : nextWorkflowStatus === 'accepted'
+                    ? 'Accept Job'
+                    : nextWorkflowStatus === 'on-the-way'
+                      ? 'Start Journey'
+                      : nextWorkflowStatus === 'arrived'
+                        ? "I've Arrived"
+                        : nextWorkflowStatus === 'work-started'
+                          ? customerVerified
+                            ? 'Start Service'
+                            : 'Verify Customer First'
+                          : nextWorkflowStatus === 'completed'
+                            ? 'Complete Service'
+                            : `Mark as ${nextWorkflowLabel}`}
               </button>
 
               <p className="mt-2 text-center text-[9px] text-muted-foreground">
@@ -4479,21 +4653,6 @@ function EmptyState({
       <p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-muted-foreground">
         {description}
       </p>
-    </div>
-  )
-}
-
-function ProviderStat({
-  label,
-  value,
-}: {
-  label: string
-  value: string
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card px-3 py-2.5">
-      <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate text-sm font-bold text-foreground">{value}</p>
     </div>
   )
 }
